@@ -69,47 +69,47 @@
             <div id="progress-text" class="text-xs text-gray-500 mt-1 text-center">0% del catálogo contado</div>
         </div>
         
-        <!-- Escáner y Búsqueda -->
+        <!-- Módulo de Escáner y Búsqueda -->
         <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-            <div class="flex justify-between items-center mb-2">
-                <span class="text-xs font-semibold text-gray-600 uppercase tracking-wider flex items-center gap-1.5">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    Lector de Código
-                </span>
-                <div class="flex items-center gap-1.5">
-                    <button type="button" id="btn-switch-cam" class="hidden text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold border border-gray-300 flex items-center gap-1">
-                        🔄 <span>Cambiar Lente</span>
-                    </button>
-                    <button type="button" id="btn-toggle-cam" class="text-xs px-2.5 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold border border-blue-200">
-                        Encender Cámara
-                    </button>
+            <!-- Botón de apertura de escáner bajo demanda -->
+            <button type="button" id="btn-open-scanner" class="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold py-3.5 px-4 rounded-xl shadow-md flex items-center justify-center gap-2.5 text-base mb-3 transition-all">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                </svg>
+                <span>📷 Escanear Código con Cámara</span>
+            </button>
+
+            <!-- Visor de Cámara Activo (Oculto cuando la cámara no está en uso) -->
+            <div id="camera-viewer-card" class="hidden mb-3 bg-gray-900 rounded-xl overflow-hidden p-2 text-white shadow-lg border border-gray-800">
+                <div class="flex justify-between items-center px-1 pb-2">
+                    <span class="text-xs font-semibold text-gray-200 flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                        Apunta al código de barras...
+                    </span>
+                    <div class="flex items-center gap-1.5">
+                        <button type="button" id="btn-switch-cam" class="hidden text-[11px] bg-gray-800 hover:bg-gray-700 text-gray-200 px-2 py-1 rounded border border-gray-600 font-medium">
+                            🔄 Lente
+                        </button>
+                        <button type="button" id="btn-close-scanner" class="text-xs bg-red-600 hover:bg-red-700 text-white px-2.5 py-1 rounded font-bold shadow-sm">
+                            ✕ Cerrar
+                        </button>
+                    </div>
                 </div>
+
+                <!-- Selector de Lente si hay múltiples cámaras traseras -->
+                <div id="camera-select-row" class="hidden mb-2 flex items-center gap-1.5 bg-gray-800 p-1.5 rounded text-[11px]">
+                    <label for="camera-select" class="text-gray-300 font-medium">📷 Lente:</label>
+                    <select id="camera-select" class="flex-1 bg-gray-900 text-white rounded px-2 py-1 border border-gray-700 text-[11px] focus:outline-none">
+                    </select>
+                </div>
+
+                <div id="reader" class="w-full rounded-lg overflow-hidden bg-black min-h-[220px]"></div>
             </div>
 
-            <!-- Selector desplegable de cámara -->
-            <div id="camera-select-row" class="hidden mb-2.5 flex items-center gap-2 bg-blue-50 p-2 rounded-lg border border-blue-100 text-xs">
-                <label for="camera-select" class="font-medium text-blue-900 whitespace-nowrap">📷 Lente:</label>
-                <select id="camera-select" class="flex-1 bg-white border border-blue-300 rounded px-2 py-1 text-xs text-gray-800 font-medium focus:outline-none focus:ring-1 focus:ring-blue-500">
-                </select>
-            </div>
-
-            <div id="reader-wrapper" class="relative rounded-lg overflow-hidden border border-gray-200 bg-gray-50 mb-3 min-h-[140px] flex items-center justify-center">
-                <div id="reader" class="w-full hidden"></div>
-                <div id="camera-placeholder" class="text-center p-4">
-                    <p class="text-sm font-semibold text-gray-700 mb-1">Cámara de Código de Barras</p>
-                    <p class="text-xs text-gray-500 mb-3">Toca para activar la cámara principal (1x) de tu teléfono.</p>
-                    <button type="button" id="btn-start-camera-cta" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-4 py-2 rounded-lg shadow-sm">
-                        📸 Activar Cámara
-                    </button>
-                </div>
-            </div>
-            
+            <!-- Búsqueda Manual / Lector Físico USB o Bluetooth -->
             <div class="flex gap-2">
-                <input type="text" id="manual-code" placeholder="Código, nombre o descripción..." class="flex-1 border rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500" autofocus />
-                <button id="btn-search" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-semibold">Buscar</button>
+                <input type="text" id="manual-code" placeholder="O ingresa código / nombre aquí..." class="flex-1 border rounded-lg p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <button id="btn-search" class="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2.5 rounded-lg font-semibold text-sm">Buscar</button>
             </div>
         </div>
 
@@ -368,20 +368,15 @@
             await syncHistoricoContados();
             await updateStats();
 
-            // Eventos de cámara
-            document.getElementById("btn-toggle-cam")?.addEventListener("click", toggleCamera);
+            // Eventos de cámara bajo demanda
+            document.getElementById("btn-open-scanner")?.addEventListener("click", () => startCamera());
+            document.getElementById("btn-close-scanner")?.addEventListener("click", () => stopCamera());
             document.getElementById("btn-switch-cam")?.addEventListener("click", switchCamera);
-            document.getElementById("btn-start-camera-cta")?.addEventListener("click", () => startCamera());
             document.getElementById("camera-select")?.addEventListener("change", async (e) => {
                 if (e.target.value) {
                     localStorage.setItem('euridice_selected_camera_id', e.target.value);
                     await startCamera(e.target.value);
                 }
-            });
-
-            // Intentar auto-iniciar cámara
-            startCamera().catch(err => {
-                console.log("Cámara en espera de interacción táctil");
             });
 
             // Eventos
@@ -698,6 +693,7 @@
         }
 
         async function displayProduct(prod) {
+            await stopCamera();
             currentProduct = prod;
             ui.emptyState.classList.add('hidden');
             ui.productContainer.classList.remove('hidden');
@@ -959,9 +955,8 @@
         }
 
         async function startCamera(targetDeviceId = null) {
-            const readerEl = document.getElementById("reader");
-            const placeholderEl = document.getElementById("camera-placeholder");
-            const toggleBtn = document.getElementById("btn-toggle-cam");
+            const viewerCard = document.getElementById("camera-viewer-card");
+            const openBtn = document.getElementById("btn-open-scanner");
 
             // Validar contexto seguro
             if (!window.isSecureContext) {
@@ -988,12 +983,9 @@
                     });
                 }
 
-                placeholderEl.classList.add("hidden");
-                readerEl.classList.remove("hidden");
-                if (toggleBtn) {
-                    toggleBtn.textContent = "Conectando...";
-                    toggleBtn.className = "text-xs px-2.5 py-1 rounded bg-yellow-50 text-yellow-700 font-semibold border border-yellow-200";
-                }
+                // Mostrar el visor de cámara y bloquear botón temporalmente
+                if (viewerCard) viewerCard.classList.remove("hidden");
+                if (openBtn) openBtn.classList.add("opacity-50", "pointer-events-none");
 
                 // 1. Obtener cámaras disponibles
                 let cameras = [];
@@ -1020,25 +1012,26 @@
                     aspectRatio: 1.333333
                 };
 
-                // Si identificamos la cámara específica por ID, usamos el ID para no caer en el gran angular
                 const cameraConfig = selectedId ? selectedId : { facingMode: "environment" };
 
                 await html5QrScanner.start(
                     cameraConfig,
                     config,
-                    (decodedText) => {
+                    async (decodedText) => {
+                        // 1. Vibración táctil de confirmación
                         if (navigator.vibrate) navigator.vibrate(80);
+
+                        // 2. APAGAR Y CERRAR LA CÁMARA DE INMEDIATO (Ahorro de batería y sensor)
+                        await stopCamera();
+
+                        // 3. Procesar el producto y desplegar la ficha
                         ui.manualCode.value = decodedText;
-                        searchProduct(decodedText);
+                        await searchProduct(decodedText);
                     },
                     (errorMessage) => {}
                 );
 
                 isScannerRunning = true;
-                if (toggleBtn) {
-                    toggleBtn.textContent = "Apagar Cámara";
-                    toggleBtn.className = "text-xs px-2.5 py-1 rounded bg-red-50 text-red-700 hover:bg-red-100 font-semibold border border-red-200";
-                }
 
                 // 3. Una vez otorgado permiso, actualizar selector con los nombres reales de las cámaras
                 try {
@@ -1065,14 +1058,7 @@
 
             } catch (err) {
                 console.error("Error al iniciar cámara:", err);
-                isScannerRunning = false;
-                readerEl.classList.add("hidden");
-                placeholderEl.classList.remove("hidden");
-
-                if (toggleBtn) {
-                    toggleBtn.textContent = "Activar Cámara";
-                    toggleBtn.className = "text-xs px-2.5 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold border border-blue-200";
-                }
+                await stopCamera();
 
                 let msg = "No se pudo activar la cámara.\n\n";
                 if (err.name === "NotAllowedError" || err.message?.toLowerCase().includes("permission")) {
@@ -1087,9 +1073,8 @@
         }
 
         async function stopCamera() {
-            const readerEl = document.getElementById("reader");
-            const placeholderEl = document.getElementById("camera-placeholder");
-            const toggleBtn = document.getElementById("btn-toggle-cam");
+            const viewerCard = document.getElementById("camera-viewer-card");
+            const openBtn = document.getElementById("btn-open-scanner");
 
             if (html5QrScanner && isScannerRunning) {
                 try {
@@ -1099,12 +1084,8 @@
                 }
             }
             isScannerRunning = false;
-            readerEl.classList.add("hidden");
-            placeholderEl.classList.remove("hidden");
-            if (toggleBtn) {
-                toggleBtn.textContent = "Encender Cámara";
-                toggleBtn.className = "text-xs px-2.5 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold border border-blue-200";
-            }
+            if (viewerCard) viewerCard.classList.add("hidden");
+            if (openBtn) openBtn.classList.remove("opacity-50", "pointer-events-none");
         }
 
         // =============================================
