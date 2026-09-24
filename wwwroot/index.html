@@ -71,7 +71,29 @@
         
         <!-- Escáner y Búsqueda -->
         <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-            <div id="reader" class="mb-4"></div>
+            <div class="flex justify-between items-center mb-2">
+                <span class="text-xs font-semibold text-gray-600 uppercase tracking-wider flex items-center gap-1.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    Lector de Código
+                </span>
+                <button type="button" id="btn-toggle-cam" class="text-xs px-2.5 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold border border-blue-200">
+                    Encender Cámara
+                </button>
+            </div>
+
+            <div id="reader-wrapper" class="relative rounded-lg overflow-hidden border border-gray-200 bg-gray-50 mb-3 min-h-[140px] flex items-center justify-center">
+                <div id="reader" class="w-full hidden"></div>
+                <div id="camera-placeholder" class="text-center p-4">
+                    <p class="text-sm font-semibold text-gray-700 mb-1">Cámara de Código de Barras</p>
+                    <p class="text-xs text-gray-500 mb-3">Toca el botón para solicitar permiso y activar la cámara trasera de tu móvil.</p>
+                    <button type="button" id="btn-start-camera-cta" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-4 py-2 rounded-lg shadow-sm">
+                        📸 Activar Cámara
+                    </button>
+                </div>
+            </div>
             
             <div class="flex gap-2">
                 <input type="text" id="manual-code" placeholder="Código, nombre o descripción..." class="flex-1 border rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500" autofocus />
@@ -334,7 +356,14 @@
             await syncHistoricoContados();
             await updateStats();
 
-            initScanner();
+            // Eventos de cámara
+            document.getElementById("btn-toggle-cam")?.addEventListener("click", toggleCamera);
+            document.getElementById("btn-start-camera-cta")?.addEventListener("click", startCamera);
+
+            // Intentar auto-iniciar cámara
+            startCamera().catch(err => {
+                console.log("Cámara en espera de interacción táctil");
+            });
 
             // Eventos
             ui.btnSearch.addEventListener('click', () => searchProduct(ui.manualCode.value));
@@ -806,33 +835,117 @@
         // =============================================
         // 12. Lector HTML5 QRCode (Cámara Trasera)
         // =============================================
-        function initScanner() {
-            const readerEl = document.getElementById("reader");
-            
-            Html5Qrcode.getCameras().then(devices => {
-                if (devices && devices.length) {
-                    const html5QrcodeScanner = new Html5Qrcode("reader");
-                    const config = { fps: 10, qrbox: { width: 250, height: 150 }, aspectRatio: 1.0 };
+        let html5QrScanner = null;
+        let isScannerRunning = false;
 
-                    html5QrcodeScanner.start(
-                        { facingMode: "environment" }, 
-                        config, 
-                        (decodedText) => {
-                            ui.manualCode.value = decodedText;
-                            searchProduct(decodedText);
-                        },
-                        () => {}
-                    ).catch(err => {
-                        console.warn("Cámara no disponible:", err);
-                        readerEl.innerHTML = '<p class="text-center text-xs text-gray-400 p-4">📷 No se pudo iniciar la cámara. Use el campo de búsqueda manual o un lector USB/Bluetooth.</p>';
-                    });
-                } else {
-                    readerEl.innerHTML = '<p class="text-center text-xs text-gray-400 p-4">📷 Sin cámara detectada (normal en PC). En dispositivos móviles se activará automáticamente. Use el campo manual o un lector USB/Bluetooth.</p>';
+        async function toggleCamera() {
+            if (isScannerRunning) {
+                await stopCamera();
+            } else {
+                await startCamera();
+            }
+        }
+
+        async function startCamera() {
+            const readerEl = document.getElementById("reader");
+            const placeholderEl = document.getElementById("camera-placeholder");
+            const toggleBtn = document.getElementById("btn-toggle-cam");
+
+            // Validar si el contexto es seguro (HTTPS o localhost)
+            if (!window.isSecureContext) {
+                alert("⚠️ Los navegadores móviles bloquean la cámara por HTTP.\n\nAsegúrate de ingresar mediante tu dominio con https:// (Cloudflare Tunnel).");
+                return;
+            }
+
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                alert("⚠️ Tu navegador no soporta o bloquea la API de cámara. Por favor abre el enlace en Google Chrome o Safari.");
+                return;
+            }
+
+            try {
+                if (!html5QrScanner) {
+                    html5QrScanner = new Html5Qrcode("reader");
                 }
-            }).catch(err => {
-                console.warn("Error accediendo cámaras:", err);
-                readerEl.innerHTML = '<p class="text-center text-xs text-gray-400 p-4">📷 Sin acceso a cámara (normal en PC de escritorio). En móviles se activará automáticamente. Use el campo manual.</p>';
-            });
+
+                if (isScannerRunning) {
+                    await stopCamera();
+                }
+
+                placeholderEl.classList.add("hidden");
+                readerEl.classList.remove("hidden");
+                if (toggleBtn) {
+                    toggleBtn.textContent = "Conectando...";
+                    toggleBtn.className = "text-xs px-2.5 py-1 rounded bg-yellow-50 text-yellow-700 font-semibold border border-yellow-200";
+                }
+
+                const config = {
+                    fps: 10,
+                    qrbox: { width: 260, height: 160 },
+                    aspectRatio: 1.333333
+                };
+
+                // Solicitud DIRECTA de cámara trasera -> Esto activa el modal de permisos en móviles
+                await html5QrScanner.start(
+                    { facingMode: "environment" },
+                    config,
+                    (decodedText) => {
+                        // Vibración de confirmación
+                        if (navigator.vibrate) navigator.vibrate(80);
+                        ui.manualCode.value = decodedText;
+                        searchProduct(decodedText);
+                    },
+                    (errorMessage) => {
+                        // Ruido habitual de escaneo
+                    }
+                );
+
+                isScannerRunning = true;
+                if (toggleBtn) {
+                    toggleBtn.textContent = "Apagar Cámara";
+                    toggleBtn.className = "text-xs px-2.5 py-1 rounded bg-red-50 text-red-700 hover:bg-red-100 font-semibold border border-red-200";
+                }
+            } catch (err) {
+                console.error("Error al iniciar cámara:", err);
+                isScannerRunning = false;
+                readerEl.classList.add("hidden");
+                placeholderEl.classList.remove("hidden");
+
+                if (toggleBtn) {
+                    toggleBtn.textContent = "Activar Cámara";
+                    toggleBtn.className = "text-xs px-2.5 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold border border-blue-200";
+                }
+
+                let msg = "No se pudo activar la cámara.\n\n";
+                if (err.name === "NotAllowedError" || err.message?.toLowerCase().includes("permission")) {
+                    msg += "Motivo: Permiso de cámara denegado.\nEn tu teléfono, toca el ícono del candado o ajustes al lado de la URL y permite el acceso a la 'Cámara'. Luego recarga la página.";
+                } else if (err.name === "NotFoundError" || err.name === "OverconstrainedError") {
+                    msg += "No se detectó cámara trasera disponible.";
+                } else {
+                    msg += (err.message || err);
+                }
+                alert(msg);
+            }
+        }
+
+        async function stopCamera() {
+            const readerEl = document.getElementById("reader");
+            const placeholderEl = document.getElementById("camera-placeholder");
+            const toggleBtn = document.getElementById("btn-toggle-cam");
+
+            if (html5QrScanner && isScannerRunning) {
+                try {
+                    await html5QrScanner.stop();
+                } catch (e) {
+                    console.warn(e);
+                }
+            }
+            isScannerRunning = false;
+            readerEl.classList.add("hidden");
+            placeholderEl.classList.remove("hidden");
+            if (toggleBtn) {
+                toggleBtn.textContent = "Encender Cámara";
+                toggleBtn.className = "text-xs px-2.5 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold border border-blue-200";
+            }
         }
 
         // =============================================
