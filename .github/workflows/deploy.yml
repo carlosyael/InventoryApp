@@ -11,14 +11,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Create data directory
-        run: mkdir -p data
+        with:
+          clean: false
 
       - name: Build and deploy with Docker
         run: |
-          docker compose down || true
-          docker compose up -d --build
+          docker compose up -d --build --remove-orphans
           echo "✅ Deployment complete!"
 
       - name: Show container status

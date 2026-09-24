@@ -1062,8 +1062,10 @@
                 const res = await fetch(`${apiBaseUrl}/inventario/contados`);
                 if (res.ok) {
                     const data = await res.json();
-                    await db.historico_conteos.clear();
-                    if (data.length > 0) await db.historico_conteos.bulkPut(data);
+                    if (Array.isArray(data) && data.length > 0) {
+                        await db.historico_conteos.clear();
+                        await db.historico_conteos.bulkPut(data);
+                    }
                 }
             } catch (e) {
                 console.error("Error al obtener histórico", e);

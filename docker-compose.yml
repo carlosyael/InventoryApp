@@ -10,7 +10,12 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:80
+      - DB_DIR=/app/data
     volumes:
-      - ./data:/app/data
+      - euridice_db_data:/app/data
       - ./Productos_Migrados.csv:/app/Productos_Migrados.csv:ro
       - ./ExistenciaAlmacen_Migrado.csv:/app/ExistenciaAlmacen_Migrado.csv:ro
+
+volumes:
+  euridice_db_data:
+    name: euridice_inventario_data

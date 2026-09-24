@@ -4,8 +4,13 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var dbPath = Environment.GetEnvironmentVariable("DB_DIR") != null 
-    ? Path.Combine(Environment.GetEnvironmentVariable("DB_DIR")!, "inventario_euridice.db") 
+var dbDir = Environment.GetEnvironmentVariable("DB_DIR");
+if (!string.IsNullOrWhiteSpace(dbDir) && !Directory.Exists(dbDir))
+{
+    Directory.CreateDirectory(dbDir);
+}
+var dbPath = !string.IsNullOrWhiteSpace(dbDir) 
+    ? Path.Combine(dbDir, "inventario_euridice.db") 
     : "inventario_euridice.db";
 
 builder.Services.AddDbContext<InventarioDbContext>(options =>
