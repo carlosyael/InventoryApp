@@ -139,6 +139,15 @@ app.MapGet("/api/inventario/pendientes-contar", async (InventarioDbContext db) =
     return Results.Ok(new { total = pendientes.Count, productos = pendientes });
 });
 
+// Resetear todos los conteos físicos (mantiene productos intactos)
+app.MapPost("/api/inventario/resetear-conteos", async (InventarioDbContext db) =>
+{
+    var count = await db.Conteos.CountAsync();
+    db.Conteos.RemoveRange(db.Conteos);
+    await db.SaveChangesAsync();
+    return Results.Ok(new { eliminados = count, mensaje = $"Se han reseteado {count} registros de conteos físicos. El catálogo se mantiene intacto." });
+}).DisableAntiforgery();
+
 // Cargar CSV en caliente
 app.MapPost("/api/productos/cargar-csv", async (HttpRequest request, InventarioDbContext db) =>
 {

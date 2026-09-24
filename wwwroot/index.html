@@ -252,11 +252,23 @@
                     </button>
                 </div>
 
-                <div class="bg-red-50 border border-red-200 rounded-lg p-3">
-                    <h4 class="font-semibold text-sm text-red-800 mb-2">🔄 Refrescar Catálogo Local</h4>
+                <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <h4 class="font-semibold text-sm text-amber-800 mb-2">🔄 Refrescar Catálogo Local</h4>
                     <p class="text-xs text-gray-600 mb-2">Forzar la recarga del catálogo desde el servidor hacia este dispositivo.</p>
-                    <button id="btn-refresh-catalog" class="w-full bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-2 rounded">
+                    <button id="btn-refresh-catalog" class="w-full bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold py-2 rounded">
                         Recargar Catálogo en este Dispositivo
+                    </button>
+                </div>
+
+                <div class="bg-red-100/70 border border-red-300 rounded-lg p-3">
+                    <h4 class="font-bold text-sm text-red-900 mb-1 flex items-center gap-1.5">
+                        ⚠️ Zona Peligrosa: Reiniciar Conteos
+                    </h4>
+                    <p class="text-xs text-red-700 mb-2.5">
+                        Borra todos los conteos físicos registrados (en el servidor y en este teléfono). El catálogo de medicamentos <strong>NO</strong> se borrará.
+                    </p>
+                    <button id="btn-reset-inventory" class="w-full bg-red-600 hover:bg-red-700 active:bg-red-800 text-white text-xs font-bold py-2 rounded shadow transition-colors flex items-center justify-center gap-1.5">
+                        🗑️ Resetear Todos los Conteos
                     </button>
                 </div>
             </div>
@@ -390,6 +402,7 @@
             ui.btnUploadCsv.addEventListener('click', uploadCsv);
             ui.btnExportAdmin.addEventListener('click', exportData);
             ui.btnRefreshCatalog.addEventListener('click', refreshCatalog);
+            document.getElementById("btn-reset-inventory")?.addEventListener('click', resetAllCounts);
             ui.statPendientesBtn.addEventListener('click', showPendientesContar);
             ui.countForm.addEventListener('submit', handleSaveCount);
             ui.btnModeSumar.addEventListener('click', (e) => { e.preventDefault(); setMode('sumar'); });
@@ -503,6 +516,55 @@
                 ui.adminModal.classList.add('hidden');
             } catch (e) {
                 alert("Error: " + e.message);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function resetAllCounts() {
+            if (!navigator.onLine) {
+                alert("⚠️ Se requiere conexión al servidor para ejecutar el reseteo.");
+                return;
+            }
+
+            const confirmText = prompt(
+                "⚠️ ADVERTENCIA CRÍTICA: Esta acción eliminará permanentemente TODOS los conteos físicos registrados en el servidor y en este dispositivo.\n\n" +
+                "El catálogo de medicamentos NO se borrará.\n\n" +
+                "Para confirmar esta acción, escribe en mayúsculas la palabra:\nRESETEAR"
+            );
+
+            if (confirmText !== 'RESETEAR') {
+                alert("Operación cancelada. No se modificó ningún dato.");
+                return;
+            }
+
+            showLoading("Reseteando todos los conteos físicos...");
+            try {
+                const res = await fetch(`${apiBaseUrl}/inventario/resetear-conteos`, {
+                    method: 'POST'
+                });
+
+                if (!res.ok) {
+                    const err = await res.text();
+                    throw new Error(err);
+                }
+
+                const result = await res.json();
+
+                // Limpiar IndexedDB local
+                await db.pendientes.clear();
+                await db.historico_conteos.clear();
+
+                // Actualizar interfaz
+                await updatePendingCounter();
+                await updateStats();
+
+                ui.adminModal.classList.add('hidden');
+                showToast("✅ Conteos reseteados a 0");
+                alert(`✅ Éxito: ${result.mensaje}`);
+            } catch (e) {
+                console.error("Error al resetear conteos:", e);
+                alert("Error al resetear conteos: " + e.message);
             } finally {
                 hideLoading();
             }
