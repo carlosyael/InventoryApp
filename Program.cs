@@ -36,6 +36,16 @@ app.MapGet("/api/productos", async (InventarioDbContext db) =>
     return Results.Ok(await db.Productos.ToListAsync());
 });
 
+app.MapGet("/api/productos/version", async (InventarioDbContext db) =>
+{
+    var count = await db.Productos.CountAsync();
+    return Results.Ok(new 
+    { 
+        version = $"{count}_{CatalogoState.Version}",
+        totalProductos = count
+    });
+});
+
 app.MapPost("/api/inventario/sync", async (InventarioDbContext db, List<ConteoFisico> conteos) =>
 {
     int saved = 0;
@@ -55,10 +65,52 @@ app.MapPost("/api/inventario/sync", async (InventarioDbContext db, List<ConteoFi
 app.MapGet("/api/inventario/contados", async (InventarioDbContext db) =>
 {
     var contados = await db.Conteos
-        .Select(c => new { c.Id, c.ProductoCodigo, c.CantidadFisica, c.Ubicacion, c.FechaRegistro })
+        .Select(c => new { 
+            c.Id, 
+            c.ProductoCodigo, 
+            c.CantidadFisica, 
+            c.Ubicacion, 
+            c.LoteContado, 
+            c.VencimientoContado, 
+            c.Usuario, 
+            c.FechaRegistro 
+        })
         .ToListAsync();
     return Results.Ok(contados);
 });
+
+app.MapPost("/api/inventario/eliminar-conteo", async (EliminarConteoRequest req, InventarioDbContext db) =>
+{
+    var conteo = await db.Conteos.FirstOrDefaultAsync(c => c.Id == req.Id);
+    if (conteo == null) return Results.NotFound(new { mensaje = "Toma no encontrada en el servidor." });
+    db.Conteos.Remove(conteo);
+    await db.SaveChangesAsync();
+    return Results.Ok(new { mensaje = "Toma eliminada exitosamente", id = req.Id });
+}).DisableAntiforgery();
+
+app.MapDelete("/api/inventario/conteo/{id:guid}", async (Guid id, InventarioDbContext db) =>
+{
+    var conteo = await db.Conteos.FirstOrDefaultAsync(c => c.Id == id);
+    if (conteo == null) return Results.NotFound(new { mensaje = "Toma no encontrada en el servidor." });
+    db.Conteos.Remove(conteo);
+    await db.SaveChangesAsync();
+    return Results.Ok(new { mensaje = "Toma eliminada exitosamente", id });
+}).DisableAntiforgery();
+
+app.MapPost("/api/inventario/editar-conteo", async (EditarConteoRequest req, InventarioDbContext db) =>
+{
+    var conteo = await db.Conteos.FirstOrDefaultAsync(c => c.Id == req.Id);
+    if (conteo == null) return Results.NotFound(new { mensaje = "Toma no encontrada en el servidor." });
+    
+    if (req.CantidadFisica < 0) return Results.BadRequest(new { mensaje = "La cantidad física no puede ser negativa." });
+    conteo.CantidadFisica = req.CantidadFisica;
+    if (req.Lote != null) conteo.LoteContado = req.Lote.Trim();
+    if (req.Vencimiento != null) conteo.VencimientoContado = req.Vencimiento.Trim();
+    if (req.Ubicacion != null) conteo.Ubicacion = req.Ubicacion.Trim();
+    
+    await db.SaveChangesAsync();
+    return Results.Ok(new { mensaje = "Toma actualizada exitosamente", conteo });
+}).DisableAntiforgery();
 
 app.MapGet("/api/inventario/exportar-conciliacion", async (InventarioDbContext db) =>
 {
@@ -161,6 +213,7 @@ app.MapPost("/api/productos/actualizar-barcode", async (ActualizarBarcodeRequest
     var nuevoBarcode = (req.CodigoBarra ?? string.Empty).Trim();
     prod.CodigoBarra = nuevoBarcode;
     await db.SaveChangesAsync();
+    CatalogoState.NotifyCatalogChanged();
 
     return Results.Ok(new 
     { 
@@ -239,6 +292,7 @@ app.MapPost("/api/productos/cargar-csv", async (HttpRequest request, InventarioD
     {
         await db.Productos.AddRangeAsync(productos.Values);
         await db.SaveChangesAsync();
+        CatalogoState.NotifyCatalogChanged();
     }
 
     return Results.Ok(new { Cargados = productos.Count, Mensaje = $"Catálogo actualizado con {productos.Count} productos." });
@@ -275,6 +329,20 @@ public class ActualizarBarcodeRequest
 {
     public string Codigo { get; set; } = string.Empty;
     public string CodigoBarra { get; set; } = string.Empty;
+}
+
+public class EliminarConteoRequest
+{
+    public Guid Id { get; set; }
+}
+
+public class EditarConteoRequest
+{
+    public Guid Id { get; set; }
+    public decimal CantidadFisica { get; set; }
+    public string? Lote { get; set; }
+    public string? Vencimiento { get; set; }
+    public string? Ubicacion { get; set; }
 }
 
 public class ConteoFisico
@@ -368,4 +436,10 @@ public static class DatabaseSeeder
             await dbContext.SaveChangesAsync();
         }
     }
+}
+
+public static class CatalogoState
+{
+    public static string Version { get; set; } = DateTime.UtcNow.Ticks.ToString();
+    public static void NotifyCatalogChanged() => Version = DateTime.UtcNow.Ticks.ToString();
 }

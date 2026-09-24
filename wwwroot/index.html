@@ -104,6 +104,9 @@
                 </div>
 
                 <div id="reader" class="w-full rounded-lg overflow-hidden bg-black min-h-[220px]"></div>
+                <p class="text-[11px] text-amber-300 bg-gray-800/90 px-2.5 py-1.5 rounded-lg text-center mt-2 flex items-center justify-center gap-1">
+                    💡 <strong>Tip iPhone:</strong> Mantén la cámara a <strong>15-20 cm</strong> del código para enfocar con nitidez.
+                </p>
             </div>
 
             <!-- Búsqueda Manual / Lector Físico USB o Bluetooth -->
@@ -155,9 +158,14 @@
                 </div>
                 <p>Se han registrado <span id="rescan-total" class="font-bold text-lg">0</span> uds. en <span id="rescan-count" class="font-bold">0</span> tomas.</p>
                 <p id="rescan-detail" class="text-xs mt-1 text-orange-600"></p>
-                <div class="mt-3 flex gap-2">
-                    <button id="btn-mode-sumar" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-2 rounded text-sm font-semibold">➕ Sumar a existente</button>
-                    <button id="btn-mode-nuevo" class="flex-1 bg-white hover:bg-gray-50 text-orange-700 border border-orange-500 py-2 rounded text-sm font-semibold">🆕 Nuevo Lote/Tramo</button>
+                <div class="mt-3 flex flex-col gap-2">
+                    <div class="flex gap-2">
+                        <button type="button" id="btn-mode-sumar" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-2 px-2 rounded text-xs font-semibold">➕ Sumar a existente</button>
+                        <button type="button" id="btn-mode-nuevo" class="flex-1 bg-white hover:bg-gray-50 text-orange-700 border border-orange-500 py-2 px-2 rounded text-xs font-semibold">🆕 Nuevo Lote/Tramo</button>
+                    </div>
+                    <button type="button" id="btn-ver-registros" class="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white py-2.5 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 shadow transition-all">
+                        📋 Ver tomas anteriores y corregir / anular
+                    </button>
                 </div>
             </div>
 
@@ -353,6 +361,39 @@
         </div>
     </div>
 
+    <!-- Modal Ver y Editar Tomas del Producto -->
+    <div id="modal-registros-producto" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-[95] hidden p-3">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[85vh] flex flex-col overflow-hidden">
+            <div class="p-3.5 border-b flex justify-between items-center bg-blue-50">
+                <div class="pr-2">
+                    <h3 class="font-bold text-sm text-gray-800 flex items-center gap-1.5">
+                        📋 Tomas Registradas
+                    </h3>
+                    <p id="modal-registros-subtitulo" class="text-xs text-blue-800 font-semibold truncate max-w-[270px]"></p>
+                </div>
+                <button type="button" id="btn-close-registros" class="text-gray-500 hover:text-gray-800 p-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
+            
+            <div class="p-2.5 bg-gray-50 border-b flex justify-between items-center text-xs">
+                <span class="text-gray-600 font-medium">Total acumulado:</span>
+                <span id="modal-registros-total-badge" class="font-bold text-blue-800 text-xs bg-blue-100 border border-blue-200 px-2.5 py-0.5 rounded-full">0 uds</span>
+            </div>
+
+            <!-- Lista de tomas -->
+            <div id="modal-registros-lista" class="p-3 overflow-y-auto flex-1 space-y-2.5">
+                <!-- Se llena dinámicamente con JavaScript -->
+            </div>
+
+            <div class="p-3 border-t bg-gray-50 flex justify-end">
+                <button type="button" id="btn-done-registros" class="bg-gray-800 hover:bg-gray-900 text-white text-xs font-semibold py-2 px-5 rounded-lg shadow-sm">
+                    Listo / Cerrar
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast de confirmación -->
     <div id="toast" class="hidden fixed top-20 left-1/2 -translate-x-1/2 z-[110] bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg font-semibold text-sm toast"></div>
 
@@ -373,12 +414,52 @@
         // =============================================
         let currentProduct = null;
         let syncInterval = null;
+        let currentEditingTomaId = null;
+        let screenWakeLock = null;
         const apiBaseUrl = window.location.origin + '/api';
         const SYNC_INTERVAL_MS = 30000; // Sondeo cada 30s
 
         // Persistir operador en localStorage
         function getOperador() { return localStorage.getItem('euridice_operador') || ''; }
         function setOperador(v) { localStorage.setItem('euridice_operador', v); }
+
+        // Feedback sonoro BEEP para confirmación rápida en escaneo (especial para iPhone)
+        function playBeepSound() {
+            try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (!AudioContext) return;
+                const ctx = new AudioContext();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = "sine";
+                osc.frequency.setValueAtTime(920, ctx.currentTime);
+                gain.gain.setValueAtTime(0.25, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.12);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.12);
+            } catch (e) {
+                console.warn("Audio feedback error:", e);
+            }
+        }
+
+        // Mantener la pantalla encendida (Wake Lock) mientras la app esté activa
+        async function requestScreenWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    screenWakeLock = await navigator.wakeLock.request('screen');
+                }
+            } catch (e) {
+                console.warn("WakeLock no disponible:", e);
+            }
+        }
+
+        document.addEventListener('visibilitychange', async () => {
+            if (screenWakeLock !== null && document.visibilityState === 'visible') {
+                await requestScreenWakeLock();
+            }
+        });
 
         // =============================================
         // 3. Referencias DOM
@@ -453,7 +534,15 @@
             btnCloseUnknownModal: document.getElementById('btn-close-unknown-modal'),
             inputSearchLink: document.getElementById('input-search-link'),
             btnSearchLink: document.getElementById('btn-search-link'),
-            linkSearchResults: document.getElementById('link-search-results')
+            linkSearchResults: document.getElementById('link-search-results'),
+            // Tomas anteriores y corrección
+            btnVerRegistros: document.getElementById('btn-ver-registros'),
+            modalRegistros: document.getElementById('modal-registros-producto'),
+            modalRegistrosSubtitulo: document.getElementById('modal-registros-subtitulo'),
+            modalRegistrosTotalBadge: document.getElementById('modal-registros-total-badge'),
+            modalRegistrosLista: document.getElementById('modal-registros-lista'),
+            btnCloseRegistros: document.getElementById('btn-close-registros'),
+            btnDoneRegistros: document.getElementById('btn-done-registros')
         };
 
         // =============================================
@@ -468,9 +557,10 @@
             window.addEventListener('offline', updateNetworkStatus);
 
             await updatePendingCounter();
-            await downloadCatalogIfEmpty();
+            await syncCatalogWithServer();
             await syncHistoricoContados();
             await updateStats();
+            requestScreenWakeLock();
 
             // Eventos de cámara bajo demanda
             document.getElementById("btn-open-scanner")?.addEventListener("click", () => startCamera());
@@ -501,6 +591,11 @@
             ui.btnModeNuevo.addEventListener('click', (e) => { e.preventDefault(); setMode('nuevo_lote'); });
             ui.fOperador.addEventListener('change', () => setOperador(ui.fOperador.value));
 
+            // Tomas registradas
+            ui.btnVerRegistros?.addEventListener('click', openRegistrosModal);
+            ui.btnCloseRegistros?.addEventListener('click', closeRegistrosModal);
+            ui.btnDoneRegistros?.addEventListener('click', closeRegistrosModal);
+
             // Eventos de Actualizar Código de Barra
             ui.btnUpdateBarcode?.addEventListener('click', () => openUpdateBarcodeModal(currentProduct));
             ui.btnCloseBarcodeModal?.addEventListener('click', closeUpdateBarcodeModal);
@@ -528,6 +623,7 @@
             syncInterval = setInterval(() => {
                 syncData();
                 syncHistoricoContados();
+                syncCatalogWithServer();
                 updateStats();
             }, SYNC_INTERVAL_MS);
         }
@@ -541,6 +637,7 @@
                 ui.networkIndicator.classList.add('bg-green-500');
                 ui.networkIndicator.title = "Online";
                 syncData();
+                syncCatalogWithServer();
             } else {
                 ui.networkIndicator.classList.remove('bg-green-500');
                 ui.networkIndicator.classList.add('bg-red-500');
@@ -596,45 +693,319 @@
         // =============================================
         // 7. Sincronización y Catálogo
         // =============================================
-        async function downloadCatalogIfEmpty() {
-            const count = await db.productos.count();
-            if (count === 0) {
-                if (!navigator.onLine) {
-                    alert("No hay catálogo local y no hay conexión para descargarlo.");
-                    return;
-                }
-                showLoading("Descargando catálogo completo...");
-                try {
+        async function syncCatalogWithServer(force = false) {
+            if (!navigator.onLine) return;
+            try {
+                const resVer = await fetch(`${apiBaseUrl}/productos/version`);
+                if (!resVer.ok) return;
+                const verData = await resVer.json();
+                const serverVersion = verData.version;
+                const serverCount = verData.totalProductos;
+                const localVersion = localStorage.getItem('euridice_catalogo_version');
+                const localCount = await db.productos.count();
+
+                if (force || localCount === 0 || !localVersion || localVersion !== serverVersion || localCount !== serverCount) {
+                    console.log("Sincronizando catálogo con el servidor...");
+                    if (localCount === 0 || force) showLoading("Descargando catálogo de productos...");
                     const res = await fetch(`${apiBaseUrl}/productos`);
-                    const data = await res.json();
-                    await db.productos.bulkPut(data);
-                    showToast(`Catálogo cargado: ${data.length} productos`);
-                } catch (e) {
-                    alert("Error descargando catálogo: " + e.message);
-                } finally {
-                    hideLoading();
+                    if (res.ok) {
+                        const data = await res.json();
+                        await db.productos.clear();
+                        await db.productos.bulkPut(data);
+                        localStorage.setItem('euridice_catalogo_version', serverVersion);
+                        await updateStats();
+                        showToast(`🔄 Catálogo sincronizado: ${data.length} productos`);
+                    }
+                    if (localCount === 0 || force) hideLoading();
                 }
+            } catch (e) {
+                console.warn("Error en sincronización de catálogo:", e);
+                if (force) hideLoading();
             }
         }
 
         async function refreshCatalog() {
             if (!navigator.onLine) { alert("Sin conexión."); return; }
             if (!confirm("¿Seguro? Esto recargará todo el catálogo desde el servidor.")) return;
-            showLoading("Recargando catálogo...");
-            try {
-                await db.productos.clear();
-                const res = await fetch(`${apiBaseUrl}/productos`);
-                const data = await res.json();
-                await db.productos.bulkPut(data);
-                showToast(`Catálogo actualizado: ${data.length} productos`);
-                await updateStats();
-                ui.adminModal.classList.add('hidden');
-            } catch (e) {
-                alert("Error: " + e.message);
-            } finally {
-                hideLoading();
+            await syncCatalogWithServer(true);
+            ui.adminModal.classList.add('hidden');
+        }
+
+        // =============================================
+        // 7.1 Gestión y Corrección de Tomas Registradas
+        // =============================================
+        async function openRegistrosModal() {
+            if (!currentProduct) return;
+            ui.modalRegistrosSubtitulo.textContent = `${currentProduct.descripcion} (Cód: ${currentProduct.codigo})`;
+            currentEditingTomaId = null;
+            await renderRegistrosLista();
+            ui.modalRegistros.classList.remove('hidden');
+        }
+
+        function closeRegistrosModal() {
+            ui.modalRegistros.classList.add('hidden');
+            currentEditingTomaId = null;
+        }
+
+        async function renderRegistrosLista() {
+            if (!currentProduct) return;
+            const historicos = await db.historico_conteos.where('productoCodigo').equals(currentProduct.codigo).toArray();
+            const pendientesLocal = (await db.pendientes.toArray()).filter(p => p.productoCodigo === currentProduct.codigo);
+
+            const listHistoricos = historicos.map(h => ({ ...h, isPendiente: false }));
+            const listPendientes = pendientesLocal.map(p => ({ ...p, isPendiente: true }));
+            const todas = [...listPendientes, ...listHistoricos];
+
+            // Ordenar por fecha descendente
+            todas.sort((a, b) => new Date(b.fechaRegistro || b.fecha || 0) - new Date(a.fechaRegistro || a.fecha || 0));
+
+            const total = todas.reduce((sum, t) => sum + (parseFloat(t.cantidadFisica) || 0), 0);
+            ui.modalRegistrosTotalBadge.textContent = `${total} ${currentProduct.unidad || 'uds'} (${todas.length} tomas)`;
+
+            ui.modalRegistrosLista.innerHTML = '';
+
+            if (todas.length === 0) {
+                ui.modalRegistrosLista.innerHTML = `
+                    <div class="text-center py-8 text-gray-500 text-xs">
+                        No hay tomas registradas para este producto.<br>
+                        Puedes registrar un nuevo conteo en el formulario principal.
+                    </div>
+                `;
+                return;
+            }
+
+            todas.forEach(toma => {
+                const isEditing = currentEditingTomaId === toma.id;
+                const div = document.createElement('div');
+                div.className = 'pt-2.5 first:pt-0';
+
+                const fechaStr = toma.fechaRegistro || toma.fecha;
+                let fechaFormateada = 'Fecha N/D';
+                if (fechaStr) {
+                    try {
+                        const d = new Date(fechaStr);
+                        fechaFormateada = d.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+                    } catch(e) {}
+                }
+
+                if (isEditing) {
+                    div.innerHTML = `
+                        <div class="bg-amber-50 border-2 border-amber-400 rounded-lg p-3 shadow-md flex flex-col gap-2">
+                            <div class="flex justify-between items-center text-xs font-bold text-amber-900 border-b border-amber-200 pb-1">
+                                <span>✏️ Editando Toma</span>
+                                <span class="text-[10px] text-amber-700">${toma.isPendiente ? 'Pendiente en móvil' : 'En Servidor'}</span>
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-gray-700">Cantidad Física:</label>
+                                <input type="number" id="edit-qty-${toma.id}" step="0.01" min="0" value="${toma.cantidadFisica}" class="w-full border-2 border-amber-400 rounded p-1.5 text-lg font-bold text-blue-900 bg-white" />
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="block text-[10px] font-semibold text-gray-700">Lote:</label>
+                                    <input type="text" id="edit-lote-${toma.id}" value="${toma.loteContado || ''}" class="w-full border rounded p-1 text-xs bg-white" />
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-semibold text-gray-700">Vencimiento:</label>
+                                    <input type="month" id="edit-venc-${toma.id}" value="${toma.vencimientoContado || ''}" class="w-full border rounded p-1 text-xs bg-white" />
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-semibold text-gray-700">Ubicación / Tramo:</label>
+                                <input type="text" id="edit-ubic-${toma.id}" value="${toma.ubicacion || 'Piso de Venta'}" class="w-full border rounded p-1 text-xs bg-white" />
+                            </div>
+                            <div class="flex gap-2 pt-1">
+                                <button type="button" onclick="guardarEdicionToma('${toma.id}', ${toma.isPendiente})" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold text-xs py-2 rounded shadow">
+                                    💾 Guardar Cambios
+                                </button>
+                                <button type="button" onclick="cancelarEdicionToma()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 text-xs px-3 py-2 rounded font-semibold">
+                                    Cancelar
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    div.innerHTML = `
+                        <div class="bg-white border rounded-lg p-3 shadow-sm hover:shadow transition-shadow flex flex-col gap-2">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <span class="text-xl font-bold text-gray-900">${toma.cantidadFisica}</span>
+                                    <span class="text-xs text-gray-500 font-medium ml-1">${currentProduct.unidad || 'uds'}</span>
+                                </div>
+                                <span class="text-[10px] px-2 py-0.5 rounded-full font-semibold ${toma.isPendiente ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-800'}">
+                                    ${toma.isPendiente ? '⏳ Pendiente local' : '☁️ En Servidor'}
+                                </span>
+                            </div>
+                            <div class="grid grid-cols-2 gap-1 text-[11px] text-gray-600 bg-gray-50 p-2 rounded">
+                                <div>📍 <strong>Ubicación:</strong> ${toma.ubicacion || 'Piso de Venta'}</div>
+                                <div>👤 <strong>Operador:</strong> ${toma.usuario || 'Operador'}</div>
+                                <div>📦 <strong>Lote:</strong> ${toma.loteContado || 'Sin lote'}</div>
+                                <div>📅 <strong>Vence:</strong> ${toma.vencimientoContado || 'N/D'}</div>
+                                <div class="col-span-2 text-gray-400 text-[10px] pt-0.5">🕒 ${fechaFormateada}</div>
+                            </div>
+                            <div class="flex gap-2 pt-1 border-t border-gray-100">
+                                <button type="button" onclick="activarEdicionToma('${toma.id}')" class="flex-1 bg-amber-50 hover:bg-amber-100 active:bg-amber-200 text-amber-800 border border-amber-300 py-1.5 px-2 rounded text-xs font-semibold flex items-center justify-center gap-1 transition-colors">
+                                    ✏️ Editar
+                                </button>
+                                <button type="button" onclick="eliminarToma('${toma.id}', ${toma.isPendiente}, ${toma.cantidadFisica})" class="flex-1 bg-red-50 hover:bg-red-100 active:bg-red-200 text-red-700 border border-red-300 py-1.5 px-2 rounded text-xs font-semibold flex items-center justify-center gap-1 transition-colors">
+                                    🗑️ Eliminar
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                ui.modalRegistrosLista.appendChild(div);
+            });
+        }
+
+        function activarEdicionToma(id) {
+            currentEditingTomaId = id;
+            renderRegistrosLista();
+        }
+
+        function cancelarEdicionToma() {
+            currentEditingTomaId = null;
+            renderRegistrosLista();
+        }
+
+        async function guardarEdicionToma(id, isPendiente) {
+            const qtyInput = document.getElementById(`edit-qty-${id}`);
+            const loteInput = document.getElementById(`edit-lote-${id}`);
+            const vencInput = document.getElementById(`edit-venc-${id}`);
+            const ubicInput = document.getElementById(`edit-ubic-${id}`);
+
+            if (!qtyInput) return;
+            const qty = parseFloat(qtyInput.value);
+            if (isNaN(qty) || qty < 0) {
+                alert("Ingrese una cantidad válida mayor o igual a 0.");
+                qtyInput.focus();
+                return;
+            }
+
+            const nuevoLote = loteInput ? loteInput.value.trim() : '';
+            const nuevoVenc = vencInput ? vencInput.value : '';
+            const nuevaUbic = ubicInput ? ubicInput.value.trim() : 'Piso de Venta';
+
+            if (isPendiente) {
+                const item = await db.pendientes.get(id);
+                if (item) {
+                    item.cantidadFisica = qty;
+                    item.loteContado = nuevoLote;
+                    item.vencimientoContado = nuevoVenc;
+                    item.ubicacion = nuevaUbic;
+                    await db.pendientes.put(item);
+                }
+            } else {
+                if (!navigator.onLine) {
+                    alert("⚠️ Esta toma ya fue sincronizada con el servidor. Se requiere conexión a internet para editarla.");
+                    return;
+                }
+                showLoading("Actualizando toma en el servidor...");
+                try {
+                    const res = await fetch(`${apiBaseUrl}/inventario/editar-conteo`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            id: id,
+                            cantidadFisica: qty,
+                            lote: nuevoLote,
+                            vencimiento: nuevoVenc,
+                            ubicacion: nuevaUbic
+                        })
+                    });
+                    if (!res.ok) {
+                        const err = await res.text();
+                        throw new Error(err);
+                    }
+                    const item = await db.historico_conteos.get(id);
+                    if (item) {
+                        item.cantidadFisica = qty;
+                        item.loteContado = nuevoLote;
+                        item.vencimientoContado = nuevoVenc;
+                        item.ubicacion = nuevaUbic;
+                        await db.historico_conteos.put(item);
+                    }
+                } catch(e) {
+                    alert("Error al actualizar la toma: " + e.message);
+                    hideLoading();
+                    return;
+                } finally {
+                    hideLoading();
+                }
+            }
+
+            currentEditingTomaId = null;
+            showToast("✅ Toma actualizada correctamente");
+            await updateStats();
+            await updatePendingCounter();
+            await renderRegistrosLista();
+            await refrescarAlertaReescaneo();
+        }
+
+        async function eliminarToma(id, isPendiente, qty) {
+            if (!confirm(`¿Confirmas que deseas ELIMINAR la toma de ${qty} unidades?\n\nEsta acción no se puede deshacer.`)) {
+                return;
+            }
+
+            if (isPendiente) {
+                await db.pendientes.delete(id);
+            } else {
+                if (!navigator.onLine) {
+                    alert("⚠️ Esta toma ya fue sincronizada con el servidor. Se requiere conexión a internet para eliminarla.");
+                    return;
+                }
+                showLoading("Eliminando toma en el servidor...");
+                try {
+                    const res = await fetch(`${apiBaseUrl}/inventario/eliminar-conteo`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: id })
+                    });
+                    if (!res.ok) {
+                        const err = await res.text();
+                        throw new Error(err);
+                    }
+                    await db.historico_conteos.delete(id);
+                } catch (e) {
+                    alert("Error al eliminar toma: " + e.message);
+                    hideLoading();
+                    return;
+                } finally {
+                    hideLoading();
+                }
+            }
+
+            showToast("🗑️ Toma eliminada");
+            await updateStats();
+            await updatePendingCounter();
+            await renderRegistrosLista();
+            await refrescarAlertaReescaneo();
+        }
+
+        async function refrescarAlertaReescaneo() {
+            if (!currentProduct) return;
+            const historicos = await db.historico_conteos.where('productoCodigo').equals(currentProduct.codigo).toArray();
+            const pendientesLocal = (await db.pendientes.toArray()).filter(p => p.productoCodigo === currentProduct.codigo);
+            const todos = [...historicos, ...pendientesLocal];
+
+            if (todos.length > 0) {
+                ui.alertRescan.classList.remove('hidden');
+                const total = todos.reduce((sum, h) => sum + (parseFloat(h.cantidadFisica) || 0), 0);
+                ui.rescanTotal.textContent = total;
+                ui.rescanCount.textContent = todos.length;
+                const ubicaciones = [...new Set(todos.map(h => h.ubicacion).filter(Boolean))];
+                ui.rescanDetail.textContent = `Ubicaciones: ${ubicaciones.join(', ')}`;
+                setMode('sumar');
+            } else {
+                ui.alertRescan.classList.add('hidden');
+                setMode('nuevo');
             }
         }
+
+        window.activarEdicionToma = activarEdicionToma;
+        window.cancelarEdicionToma = cancelarEdicionToma;
+        window.guardarEdicionToma = guardarEdicionToma;
+        window.eliminarToma = eliminarToma;
 
         async function resetAllCounts() {
             if (!navigator.onLine) {
@@ -723,7 +1094,10 @@
                             productoCodigo: p.productoCodigo,
                             cantidadFisica: p.cantidadFisica,
                             ubicacion: p.ubicacion,
-                            fechaRegistro: p.fechaRegistro
+                            fechaRegistro: p.fechaRegistro,
+                            loteContado: p.loteContado,
+                            vencimientoContado: p.vencimientoContado,
+                            usuario: p.usuario
                         });
                     }
                     
@@ -771,6 +1145,11 @@
                 const resCat = await fetch(`${apiBaseUrl}/productos`);
                 const dataCat = await resCat.json();
                 await db.productos.bulkPut(dataCat);
+                const resVer = await fetch(`${apiBaseUrl}/productos/version`);
+                if (resVer.ok) {
+                    const verData = await resVer.json();
+                    localStorage.setItem('euridice_catalogo_version', verData.version);
+                }
                 await updateStats();
                 ui.adminModal.classList.add('hidden');
             } catch (e) {
@@ -877,6 +1256,7 @@
                     cameraConfig,
                     config,
                     async (decodedText) => {
+                        playBeepSound();
                         if (navigator.vibrate) navigator.vibrate(80);
                         ui.inputNewBarcode.value = decodedText;
                         await stopModalBarcodeScanner();
@@ -1362,6 +1742,7 @@
                 // Mostrar el visor de cámara y bloquear botón temporalmente
                 if (viewerCard) viewerCard.classList.remove("hidden");
                 if (openBtn) openBtn.classList.add("opacity-50", "pointer-events-none");
+                requestScreenWakeLock();
 
                 // 1. Obtener cámaras disponibles
                 let cameras = [];
@@ -1394,7 +1775,8 @@
                     cameraConfig,
                     config,
                     async (decodedText) => {
-                        // 1. Vibración táctil de confirmación
+                        // 1. Sonido Beep y Vibración táctil de confirmación
+                        playBeepSound();
                         if (navigator.vibrate) navigator.vibrate(80);
 
                         // 2. APAGAR Y CERRAR LA CÁMARA DE INMEDIATO (Ahorro de batería y sensor)
