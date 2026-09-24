@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Inventario Físico - Farmacia Eurídice</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#1e40af">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Dexie.js -->
+    <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
+    <!-- Html5-QRCode -->
+    <script src="https://unpkg.com/html5-qrcode"></script>
+
+    <style>
+        body { background-color: #f3f4f6; }
+        #reader { width: 100%; border-radius: 0.5rem; overflow: hidden; }
+        .hidden { display: none !important; }
+        .toast { animation: slideIn 0.3s ease-out, fadeOut 0.5s ease-in 2.5s forwards; }
+        @keyframes slideIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes fadeOut { to { opacity: 0; } }
+    </style>
+</head>
+<body class="text-gray-800 antialiased h-screen flex flex-col">
+
+    <!-- Navbar -->
+    <header class="bg-blue-800 text-white shadow-md p-3 flex justify-between items-center sticky top-0 z-50">
+        <div class="flex items-center gap-2">
+            <h1 class="text-lg font-bold truncate">💊 Farmacia Eurídice</h1>
+            <div id="network-indicator" class="w-3 h-3 rounded-full bg-green-500 flex-shrink-0" title="Online"></div>
+        </div>
+        <div class="flex items-center gap-2">
+            <div class="bg-blue-900 px-2 py-1 rounded text-xs font-semibold flex items-center gap-1" title="Pendientes de sincronizar">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                <span id="pending-counter">0</span>
+            </div>
+            <button id="btn-sync" class="bg-blue-600 hover:bg-blue-500 text-xs px-2 py-1 rounded">Sync</button>
+            <button id="btn-export" class="bg-green-600 hover:bg-green-500 text-xs px-2 py-1 rounded">Exportar</button>
+            <button id="btn-admin" class="bg-yellow-500 hover:bg-yellow-400 text-xs px-2 py-1 rounded text-gray-900 font-semibold">⚙️</button>
+        </div>
+    </header>
+
+    <main class="flex-1 overflow-y-auto p-4 flex flex-col gap-4 max-w-lg mx-auto w-full">
+
+        <!-- Panel de Estadísticas -->
+        <div id="stats-panel" class="bg-gradient-to-r from-blue-50 to-indigo-50 p-3 rounded-lg border border-blue-200 text-sm">
+            <div class="grid grid-cols-4 gap-2 text-center">
+                <div>
+                    <div id="stat-total" class="text-xl font-bold text-blue-700">0</div>
+                    <div class="text-xs text-gray-500">Catálogo</div>
+                </div>
+                <div>
+                    <div id="stat-contados" class="text-xl font-bold text-green-600">0</div>
+                    <div class="text-xs text-gray-500">Contados</div>
+                </div>
+                <div>
+                    <div id="stat-tomas" class="text-xl font-bold text-orange-600">0</div>
+                    <div class="text-xs text-gray-500">Tomas</div>
+                </div>
+                <div id="stat-pendientes-btn" class="cursor-pointer hover:bg-blue-100 rounded p-1">
+                    <div id="stat-pendientes" class="text-xl font-bold text-red-600">0</div>
+                    <div class="text-xs text-red-500 underline">Pendientes</div>
+                </div>
+            </div>
+            <div class="mt-2 w-full bg-gray-200 rounded-full h-2">
+                <div id="progress-bar" class="bg-green-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+            </div>
+            <div id="progress-text" class="text-xs text-gray-500 mt-1 text-center">0% del catálogo contado</div>
+        </div>
+        
+        <!-- Escáner y Búsqueda -->
+        <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+            <div id="reader" class="mb-4"></div>
+            
+            <div class="flex gap-2">
+                <input type="text" id="manual-code" placeholder="Código, nombre o descripción..." class="flex-1 border rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500" autofocus />
+                <button id="btn-search" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-semibold">Buscar</button>
+            </div>
+        </div>
+
+        <!-- Pantalla Principal / Estado Vacío -->
+        <div id="empty-state" class="text-center py-6 text-gray-500">
+            <p class="text-lg">📦 Escanee o busque un producto para iniciar la toma.</p>
+            <p class="text-xs mt-1">Puede buscar por código de barras, código interno o nombre parcial.</p>
+        </div>
+
+        <!-- Ficha de Producto y Formulario -->
+        <div id="product-container" class="hidden flex-col gap-4">
+            
+            <!-- Info Producto -->
+            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200 border-l-4 border-l-blue-600">
+                <h2 id="prod-desc" class="font-bold text-lg mb-1 leading-tight"></h2>
+                <div class="grid grid-cols-2 gap-2 text-sm text-gray-600 mb-2">
+                    <div><span class="font-semibold">Cód:</span> <span id="prod-code"></span></div>
+                    <div><span class="font-semibold">Cód. Barra:</span> <span id="prod-barcode"></span></div>
+                    <div><span class="font-semibold">Unidad:</span> <span id="prod-unit"></span></div>
+                    <div><span class="font-semibold">Cód. Old:</span> <span id="prod-oldcode"></span></div>
+                </div>
+                <div class="grid grid-cols-2 gap-2 text-sm text-gray-700 bg-gray-50 p-2 rounded">
+                    <div><span class="font-semibold">Precio:</span> $<span id="prod-price"></span></div>
+                    <div><span class="font-semibold">Costo:</span> $<span id="prod-cost"></span></div>
+                </div>
+                <div class="mt-2 text-xs text-gray-500 bg-yellow-50 p-2 rounded border border-yellow-100">
+                    <span class="font-semibold text-yellow-700">Lote Histórico:</span> <span id="prod-ref-lote"></span>
+                </div>
+            </div>
+
+            <!-- Panel Alerta Reescaneo -->
+            <div id="rescan-alert" class="hidden bg-orange-100 border-l-4 border-orange-500 p-4 rounded text-orange-800 shadow-sm text-sm">
+                <div class="flex items-center gap-2 mb-2 font-bold">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+                    ⚠️ Producto ya contado
+                </div>
+                <p>Se han registrado <span id="rescan-total" class="font-bold text-lg">0</span> uds. en <span id="rescan-count" class="font-bold">0</span> tomas.</p>
+                <p id="rescan-detail" class="text-xs mt-1 text-orange-600"></p>
+                <div class="mt-3 flex gap-2">
+                    <button id="btn-mode-sumar" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-2 rounded text-sm font-semibold">➕ Sumar a existente</button>
+                    <button id="btn-mode-nuevo" class="flex-1 bg-white hover:bg-gray-50 text-orange-700 border border-orange-500 py-2 rounded text-sm font-semibold">🆕 Nuevo Lote/Tramo</button>
+                </div>
+            </div>
+
+            <!-- Formulario de Toma -->
+            <form id="count-form" class="bg-white p-4 rounded-lg shadow-sm border border-gray-200 flex flex-col gap-3">
+                <input type="hidden" id="current-prod-id">
+                <input type="hidden" id="current-mode" value="nuevo">
+                
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Cantidad Física</label>
+                    <input type="number" id="form-qty" step="0.01" min="0" required class="w-full border-2 border-blue-400 rounded-lg p-3 text-2xl font-bold text-center focus:outline-none focus:border-blue-600 bg-blue-50" inputmode="decimal">
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-700 mb-1">Lote (Opcional)</label>
+                        <input type="text" id="form-lote" class="w-full border rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-700 mb-1">Vencimiento</label>
+                        <input type="month" id="form-venc" class="w-full border rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-700 mb-1">Ubicación / Tramo</label>
+                        <input type="text" id="form-ubicacion" required value="Piso de Venta" class="w-full border rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-700 mb-1">Operador</label>
+                        <input type="text" id="form-operador" required class="w-full border rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    </div>
+                </div>
+
+                <button type="submit" class="mt-2 w-full bg-green-600 hover:bg-green-700 text-white font-bold text-lg py-3 rounded-lg shadow-md transition-colors">
+                    ✅ Guardar Conteo
+                </button>
+            </form>
+
+        </div>
+    </main>
+
+    <!-- Modal Cargando -->
+    <div id="loading-overlay" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-[100] hidden">
+        <div class="bg-white p-6 rounded-lg text-center shadow-xl">
+            <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-500 border-t-transparent mb-4"></div>
+            <p id="loading-msg" class="font-semibold text-gray-700">Cargando...</p>
+        </div>
+    </div>
+
+    <!-- Modal Resultados de Búsqueda -->
+    <div id="search-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-[90] hidden p-4">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[80vh] flex flex-col">
+            <div class="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
+                <h3 id="search-modal-title" class="font-bold text-lg text-gray-800">Resultados de búsqueda</h3>
+                <button id="btn-close-search" class="text-gray-500 hover:text-gray-800">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
+            <div id="search-results-list" class="overflow-y-auto p-2 flex-1 space-y-2">
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Admin / Carga CSV -->
+    <div id="admin-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-[90] hidden p-4">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md flex flex-col">
+            <div class="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
+                <h3 class="font-bold text-lg text-gray-800">⚙️ Administración</h3>
+                <button id="btn-close-admin" class="text-gray-500 hover:text-gray-800">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
+            <div class="p-4 space-y-4">
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <h4 class="font-semibold text-sm text-blue-800 mb-2">📂 Cargar / Actualizar Catálogo CSV</h4>
+                    <p class="text-xs text-gray-600 mb-3">Sube los archivos CSV para actualizar el catálogo de productos en el servidor. Esto reemplazará el catálogo actual.</p>
+                    <div class="space-y-2">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-700 mb-1">Productos_Migrados.csv (obligatorio)</label>
+                            <input type="file" id="csv-productos" accept=".csv" class="w-full text-xs border rounded p-1.5 bg-white">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-700 mb-1">ExistenciaAlmacen_Migrado.csv (opcional)</label>
+                            <input type="file" id="csv-existencias" accept=".csv" class="w-full text-xs border rounded p-1.5 bg-white">
+                        </div>
+                        <button id="btn-upload-csv" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold py-2 rounded">
+                            📤 Cargar al Servidor
+                        </button>
+                    </div>
+                </div>
+
+                <div class="bg-green-50 border border-green-200 rounded-lg p-3">
+                    <h4 class="font-semibold text-sm text-green-800 mb-2">📥 Exportar Conciliación</h4>
+                    <p class="text-xs text-gray-600 mb-2">Descarga el consolidado de todos los conteos físicos registrados en formato CSV.</p>
+                    <button id="btn-export-admin" class="w-full bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-2 rounded">
+                        Descargar CSV de Conciliación
+                    </button>
+                </div>
+
+                <div class="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <h4 class="font-semibold text-sm text-red-800 mb-2">🔄 Refrescar Catálogo Local</h4>
+                    <p class="text-xs text-gray-600 mb-2">Forzar la recarga del catálogo desde el servidor hacia este dispositivo.</p>
+                    <button id="btn-refresh-catalog" class="w-full bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-2 rounded">
+                        Recargar Catálogo en este Dispositivo
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast de confirmación -->
+    <div id="toast" class="hidden fixed top-20 left-1/2 -translate-x-1/2 z-[110] bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg font-semibold text-sm toast"></div>
+
+    <!-- Scripts de Lógica PWA -->
+    <script>
+        // =============================================
+        // 1. Configuración DB Dexie (IndexedDB)
+        // =============================================
+        const db = new Dexie("EuridiceInventoryDB");
+        db.version(1).stores({
+            productos: "codigo, codigoBarra, codigoOld, descripcion",
+            pendientes: "id, fecha",
+            historico_conteos: "id, productoCodigo, fecha"
+        });
+
+        // =============================================
+        // 2. Estado Global
+        // =============================================
+        let currentProduct = null;
+        let syncInterval = null;
+        const apiBaseUrl = window.location.origin + '/api';
+        const SYNC_INTERVAL_MS = 30000; // Sondeo cada 30s
+
+        // Persistir operador en localStorage
+        function getOperador() { return localStorage.getItem('euridice_operador') || ''; }
+        function setOperador(v) { localStorage.setItem('euridice_operador', v); }
+
+        // =============================================
+        // 3. Referencias DOM
+        // =============================================
+        const ui = {
+            networkIndicator: document.getElementById('network-indicator'),
+            pendingCounter: document.getElementById('pending-counter'),
+            btnSync: document.getElementById('btn-sync'),
+            btnExport: document.getElementById('btn-export'),
+            btnAdmin: document.getElementById('btn-admin'),
+            manualCode: document.getElementById('manual-code'),
+            btnSearch: document.getElementById('btn-search'),
+            emptyState: document.getElementById('empty-state'),
+            productContainer: document.getElementById('product-container'),
+            loadingOverlay: document.getElementById('loading-overlay'),
+            loadingMsg: document.getElementById('loading-msg'),
+            countForm: document.getElementById('count-form'),
+            // Stats
+            statTotal: document.getElementById('stat-total'),
+            statContados: document.getElementById('stat-contados'),
+            statTomas: document.getElementById('stat-tomas'),
+            statPendientes: document.getElementById('stat-pendientes'),
+            statPendientesBtn: document.getElementById('stat-pendientes-btn'),
+            progressBar: document.getElementById('progress-bar'),
+            progressText: document.getElementById('progress-text'),
+            // Ficha producto
+            pDesc: document.getElementById('prod-desc'),
+            pCode: document.getElementById('prod-code'),
+            pBar: document.getElementById('prod-barcode'),
+            pUnit: document.getElementById('prod-unit'),
+            pOld: document.getElementById('prod-oldcode'),
+            pPrice: document.getElementById('prod-price'),
+            pCost: document.getElementById('prod-cost'),
+            pRefLote: document.getElementById('prod-ref-lote'),
+            // Formulario
+            fQty: document.getElementById('form-qty'),
+            fLote: document.getElementById('form-lote'),
+            fVenc: document.getElementById('form-venc'),
+            fUbicacion: document.getElementById('form-ubicacion'),
+            fOperador: document.getElementById('form-operador'),
+            fMode: document.getElementById('current-mode'),
+            // Alerta Reescaneo
+            alertRescan: document.getElementById('rescan-alert'),
+            rescanTotal: document.getElementById('rescan-total'),
+            rescanCount: document.getElementById('rescan-count'),
+            rescanDetail: document.getElementById('rescan-detail'),
+            btnModeSumar: document.getElementById('btn-mode-sumar'),
+            btnModeNuevo: document.getElementById('btn-mode-nuevo'),
+            // Modales
+            searchModal: document.getElementById('search-modal'),
+            searchModalTitle: document.getElementById('search-modal-title'),
+            btnCloseSearch: document.getElementById('btn-close-search'),
+            searchResultsList: document.getElementById('search-results-list'),
+            adminModal: document.getElementById('admin-modal'),
+            btnCloseAdmin: document.getElementById('btn-close-admin'),
+            btnUploadCsv: document.getElementById('btn-upload-csv'),
+            csvProductos: document.getElementById('csv-productos'),
+            csvExistencias: document.getElementById('csv-existencias'),
+            btnExportAdmin: document.getElementById('btn-export-admin'),
+            btnRefreshCatalog: document.getElementById('btn-refresh-catalog'),
+            toast: document.getElementById('toast')
+        };
+
+        // =============================================
+        // 4. Inicialización
+        // =============================================
+        async function init() {
+            // Restaurar operador guardado
+            ui.fOperador.value = getOperador() || 'Operador 1';
+
+            updateNetworkStatus();
+            window.addEventListener('online', updateNetworkStatus);
+            window.addEventListener('offline', updateNetworkStatus);
+
+            await updatePendingCounter();
+            await downloadCatalogIfEmpty();
+            await syncHistoricoContados();
+            await updateStats();
+
+            initScanner();
+
+            // Eventos
+            ui.btnSearch.addEventListener('click', () => searchProduct(ui.manualCode.value));
+            ui.manualCode.addEventListener('keypress', (e) => { if (e.key === 'Enter') { e.preventDefault(); searchProduct(ui.manualCode.value); }});
+            ui.btnSync.addEventListener('click', syncData);
+            ui.btnExport.addEventListener('click', exportData);
+            ui.btnAdmin.addEventListener('click', () => ui.adminModal.classList.remove('hidden'));
+            ui.btnCloseAdmin.addEventListener('click', () => ui.adminModal.classList.add('hidden'));
+            ui.btnCloseSearch.addEventListener('click', () => ui.searchModal.classList.add('hidden'));
+            ui.btnUploadCsv.addEventListener('click', uploadCsv);
+            ui.btnExportAdmin.addEventListener('click', exportData);
+            ui.btnRefreshCatalog.addEventListener('click', refreshCatalog);
+            ui.statPendientesBtn.addEventListener('click', showPendientesContar);
+            ui.countForm.addEventListener('submit', handleSaveCount);
+            ui.btnModeSumar.addEventListener('click', (e) => { e.preventDefault(); setMode('sumar'); });
+            ui.btnModeNuevo.addEventListener('click', (e) => { e.preventDefault(); setMode('nuevo_lote'); });
+            ui.fOperador.addEventListener('change', () => setOperador(ui.fOperador.value));
+
+            // Sondeo periódico automático
+            syncInterval = setInterval(() => {
+                syncData();
+                syncHistoricoContados();
+                updateStats();
+            }, SYNC_INTERVAL_MS);
+        }
+
+        // =============================================
+        // 5. Gestión de Red
+        // =============================================
+        function updateNetworkStatus() {
+            if (navigator.onLine) {
+                ui.networkIndicator.classList.remove('bg-red-500');
+                ui.networkIndicator.classList.add('bg-green-500');
+                ui.networkIndicator.title = "Online";
+                syncData();
+            } else {
+                ui.networkIndicator.classList.remove('bg-green-500');
+                ui.networkIndicator.classList.add('bg-red-500');
+                ui.networkIndicator.title = "Offline";
+            }
+        }
+
+        async function updatePendingCounter() {
+            const count = await db.pendientes.count();
+            ui.pendingCounter.textContent = count;
+        }
+
+        function showLoading(msg) {
+            ui.loadingMsg.textContent = msg;
+            ui.loadingOverlay.classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            ui.loadingOverlay.classList.add('hidden');
+        }
+
+        function showToast(msg) {
+            ui.toast.textContent = msg;
+            ui.toast.classList.remove('hidden');
+            setTimeout(() => ui.toast.classList.add('hidden'), 3000);
+        }
+
+        function uuidv4() {
+            return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
+                (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
+            );
+        }
+
+        // =============================================
+        // 6. Estadísticas
+        // =============================================
+        async function updateStats() {
+            const totalLocal = await db.productos.count();
+            const contados = await db.historico_conteos.orderBy('productoCodigo').uniqueKeys();
+            const tomas = await db.historico_conteos.count();
+            const pendientesCount = totalLocal - contados.length;
+
+            ui.statTotal.textContent = totalLocal.toLocaleString();
+            ui.statContados.textContent = contados.length.toLocaleString();
+            ui.statTomas.textContent = tomas.toLocaleString();
+            ui.statPendientes.textContent = (pendientesCount > 0 ? pendientesCount : 0).toLocaleString();
+
+            const pct = totalLocal > 0 ? ((contados.length / totalLocal) * 100).toFixed(1) : 0;
+            ui.progressBar.style.width = pct + '%';
+            ui.progressText.textContent = `${pct}% del catálogo contado (${contados.length} de ${totalLocal})`;
+        }
+
+        // =============================================
+        // 7. Sincronización y Catálogo
+        // =============================================
+        async function downloadCatalogIfEmpty() {
+            const count = await db.productos.count();
+            if (count === 0) {
+                if (!navigator.onLine) {
+                    alert("No hay catálogo local y no hay conexión para descargarlo.");
+                    return;
+                }
+                showLoading("Descargando catálogo completo...");
+                try {
+                    const res = await fetch(`${apiBaseUrl}/productos`);
+                    const data = await res.json();
+                    await db.productos.bulkPut(data);
+                    showToast(`Catálogo cargado: ${data.length} productos`);
+                } catch (e) {
+                    alert("Error descargando catálogo: " + e.message);
+                } finally {
+                    hideLoading();
+                }
+            }
+        }
+
+        async function refreshCatalog() {
+            if (!navigator.onLine) { alert("Sin conexión."); return; }
+            if (!confirm("¿Seguro? Esto recargará todo el catálogo desde el servidor.")) return;
+            showLoading("Recargando catálogo...");
+            try {
+                await db.productos.clear();
+                const res = await fetch(`${apiBaseUrl}/productos`);
+                const data = await res.json();
+                await db.productos.bulkPut(data);
+                showToast(`Catálogo actualizado: ${data.length} productos`);
+                await updateStats();
+                ui.adminModal.classList.add('hidden');
+            } catch (e) {
+                alert("Error: " + e.message);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function syncHistoricoContados() {
+            if (!navigator.onLine) return;
+            try {
+                const res = await fetch(`${apiBaseUrl}/inventario/contados`);
+                if (res.ok) {
+                    const data = await res.json();
+                    await db.historico_conteos.clear();
+                    if (data.length > 0) await db.historico_conteos.bulkPut(data);
+                }
+            } catch (e) {
+                console.error("Error al obtener histórico", e);
+            }
+        }
+
+        async function syncData() {
+            if (!navigator.onLine) return;
+            
+            const pendientes = await db.pendientes.toArray();
+            if (pendientes.length === 0) return;
+
+            try {
+                const res = await fetch(`${apiBaseUrl}/inventario/sync`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(pendientes)
+                });
+
+                if (res.ok) {
+                    const result = await res.json();
+                    const ids = pendientes.map(p => p.id);
+                    await db.pendientes.bulkDelete(ids);
+                    
+                    for(let p of pendientes) {
+                        await db.historico_conteos.put({
+                            id: p.id,
+                            productoCodigo: p.productoCodigo,
+                            cantidadFisica: p.cantidadFisica,
+                            ubicacion: p.ubicacion,
+                            fechaRegistro: p.fechaRegistro
+                        });
+                    }
+                    
+                    await updatePendingCounter();
+                    await syncHistoricoContados();
+                    await updateStats();
+                    if (result.guardados > 0) showToast(`✅ ${result.guardados} registros sincronizados`);
+                }
+            } catch (e) {
+                console.error("Error sincronizando.", e);
+            }
+        }
+
+        // =============================================
+        // 8. Carga de CSV en Ejecución
+        // =============================================
+        async function uploadCsv() {
+            const fileProd = ui.csvProductos.files[0];
+            if (!fileProd) { alert("Selecciona al menos el archivo de Productos."); return; }
+            if (!navigator.onLine) { alert("Sin conexión."); return; }
+            if (!confirm("Esto reemplazará el catálogo actual en el servidor. ¿Continuar?")) return;
+
+            showLoading("Subiendo y procesando CSV...");
+            try {
+                const formData = new FormData();
+                formData.append('productos', fileProd);
+                const fileExist = ui.csvExistencias.files[0];
+                if (fileExist) formData.append('existencias', fileExist);
+
+                const res = await fetch(`${apiBaseUrl}/productos/cargar-csv`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!res.ok) {
+                    const err = await res.text();
+                    throw new Error(err);
+                }
+
+                const result = await res.json();
+                showToast(`✅ ${result.mensaje}`);
+
+                // Refrescar catálogo local
+                await db.productos.clear();
+                const resCat = await fetch(`${apiBaseUrl}/productos`);
+                const dataCat = await resCat.json();
+                await db.productos.bulkPut(dataCat);
+                await updateStats();
+                ui.adminModal.classList.add('hidden');
+            } catch (e) {
+                alert("Error al cargar CSV: " + e.message);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // =============================================
+        // 9. Productos Pendientes de Contar
+        // =============================================
+        async function showPendientesContar() {
+            showLoading("Calculando pendientes...");
+            try {
+                const codigosContados = new Set(await db.historico_conteos.orderBy('productoCodigo').uniqueKeys());
+                const pendientesLocal = (await db.pendientes.toArray()).map(p => p.productoCodigo);
+                pendientesLocal.forEach(c => codigosContados.add(c));
+                
+                const todos = await db.productos.toArray();
+                const pendientes = todos.filter(p => !codigosContados.has(p.codigo));
+
+                ui.searchResultsList.innerHTML = '';
+                ui.searchModalTitle.textContent = `Pendientes de contar (${pendientes.length})`;
+                
+                if (pendientes.length === 0) {
+                    ui.searchResultsList.innerHTML = '<p class="text-center text-green-600 font-bold py-8">🎉 ¡Todos los productos han sido contados!</p>';
+                } else {
+                    pendientes.forEach(m => {
+                        const div = document.createElement('div');
+                        div.className = 'p-3 bg-white border rounded hover:bg-blue-50 cursor-pointer text-sm active:bg-blue-100';
+                        div.innerHTML = `<div class="font-bold text-gray-800">${m.descripcion}</div><div class="text-xs text-gray-500">Cód: ${m.codigo} | Barra: ${m.codigoBarra} | ${m.unidad}</div>`;
+                        div.onclick = () => {
+                            ui.searchModal.classList.add('hidden');
+                            displayProduct(m);
+                        };
+                        ui.searchResultsList.appendChild(div);
+                    });
+                }
+                ui.searchModal.classList.remove('hidden');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // =============================================
+        // 10. Búsqueda y Visualización
+        // =============================================
+        async function searchProduct(term) {
+            if (!term) return;
+            term = term.trim();
+            
+            // Búsqueda exacta por código de barras, código interno, código antiguo
+            let prod = await db.productos.get({codigoBarra: term});
+            if (!prod) prod = await db.productos.get({codigo: term});
+            if (!prod) prod = await db.productos.get({codigoOld: term});
+
+            // Búsqueda parcial por descripción
+            if (!prod) {
+                const termUpper = term.toUpperCase();
+                const matches = await db.productos.filter(p => 
+                    p.descripcion.toUpperCase().includes(termUpper) ||
+                    p.codigoBarra.includes(term) ||
+                    p.codigoOld.includes(term)
+                ).limit(50).toArray();
+                
+                if (matches.length === 1) {
+                    prod = matches[0];
+                } else if (matches.length > 1) {
+                    showSearchResults(matches);
+                    return;
+                }
+            }
+
+            if (prod) {
+                displayProduct(prod);
+            } else {
+                alert("Producto no encontrado. Intente con otra descripción o código.");
+                ui.manualCode.select();
+            }
+        }
+
+        function showSearchResults(matches) {
+            ui.searchResultsList.innerHTML = '';
+            ui.searchModalTitle.textContent = `Resultados (${matches.length})`;
+            matches.forEach(m => {
+                const div = document.createElement('div');
+                div.className = 'p-3 bg-white border rounded hover:bg-blue-50 cursor-pointer text-sm active:bg-blue-100';
+                div.innerHTML = `<div class="font-bold text-gray-800">${m.descripcion}</div><div class="text-xs text-gray-500">Cód: ${m.codigo} | Barra: ${m.codigoBarra} | ${m.unidad}</div>`;
+                div.onclick = () => {
+                    ui.searchModal.classList.add('hidden');
+                    displayProduct(m);
+                };
+                ui.searchResultsList.appendChild(div);
+            });
+            ui.searchModal.classList.remove('hidden');
+        }
+
+        async function displayProduct(prod) {
+            currentProduct = prod;
+            ui.emptyState.classList.add('hidden');
+            ui.productContainer.classList.remove('hidden');
+            ui.productContainer.classList.add('flex');
+
+            ui.pDesc.textContent = prod.descripcion;
+            ui.pCode.textContent = prod.codigo;
+            ui.pBar.textContent = prod.codigoBarra || 'N/D';
+            ui.pUnit.textContent = prod.unidad;
+            ui.pOld.textContent = prod.codigoOld || 'N/D';
+            ui.pPrice.textContent = Number(prod.precio).toFixed(2);
+            ui.pCost.textContent = Number(prod.costo).toFixed(2);
+            ui.pRefLote.textContent = prod.loteReferencia || 'N/D';
+
+            // Reset Form pero preservar ubicación y operador
+            const ubicActual = ui.fUbicacion.value;
+            const opActual = ui.fOperador.value;
+            ui.fQty.value = '';
+            ui.fLote.value = '';
+            ui.fVenc.value = '';
+            ui.fUbicacion.value = ubicActual || 'Piso de Venta';
+            ui.fOperador.value = opActual || getOperador() || 'Operador 1';
+            setMode('nuevo');
+            
+            // Check Rescan (Auditoría de reescaneo cruzado)
+            const historicos = await db.historico_conteos.where('productoCodigo').equals(prod.codigo).toArray();
+            // También verificar pendientes locales no sincronizados
+            const pendientesLocal = (await db.pendientes.toArray()).filter(p => p.productoCodigo === prod.codigo);
+            const todosConteos = [...historicos, ...pendientesLocal];
+            
+            if (todosConteos.length > 0) {
+                ui.alertRescan.classList.remove('hidden');
+                const total = todosConteos.reduce((sum, h) => sum + (h.cantidadFisica || 0), 0);
+                ui.rescanTotal.textContent = total;
+                ui.rescanCount.textContent = todosConteos.length;
+                
+                // Mostrar detalle de ubicaciones registradas
+                const ubicaciones = [...new Set(todosConteos.map(h => h.ubicacion).filter(Boolean))];
+                ui.rescanDetail.textContent = `Ubicaciones: ${ubicaciones.join(', ')}`;
+                
+                setMode('sumar'); 
+            } else {
+                ui.alertRescan.classList.add('hidden');
+                setMode('nuevo');
+            }
+
+            ui.fQty.focus();
+            window.scrollTo({ top: ui.productContainer.offsetTop - 10, behavior: 'smooth' });
+        }
+
+        function setMode(mode) {
+            ui.fMode.value = mode;
+            // Toggle visual classes for the mode buttons
+            ui.btnModeSumar.className = mode === 'sumar' 
+                ? 'flex-1 bg-orange-500 hover:bg-orange-600 text-white py-2 rounded text-sm font-semibold'
+                : 'flex-1 bg-white hover:bg-gray-50 text-orange-700 border border-orange-500 py-2 rounded text-sm font-semibold';
+            ui.btnModeNuevo.className = mode !== 'sumar'
+                ? 'flex-1 bg-orange-500 hover:bg-orange-600 text-white py-2 rounded text-sm font-semibold'
+                : 'flex-1 bg-white hover:bg-gray-50 text-orange-700 border border-orange-500 py-2 rounded text-sm font-semibold';
+        }
+
+        // =============================================
+        // 10. Guardar Conteo
+        // =============================================
+        async function handleSaveCount(e) {
+            e.preventDefault();
+            if (!currentProduct) return;
+
+            const qty = parseFloat(ui.fQty.value);
+            if (isNaN(qty) || qty < 0) {
+                alert("Cantidad inválida");
+                return;
+            }
+
+            const operador = ui.fOperador.value.trim();
+            if (!operador) { alert("Ingrese el nombre del operador"); ui.fOperador.focus(); return; }
+            setOperador(operador);
+
+            const registro = {
+                id: uuidv4(),
+                productoCodigo: currentProduct.codigo,
+                codigoBarraLeido: ui.manualCode.value || currentProduct.codigoBarra,
+                descripcion: currentProduct.descripcion,
+                cantidadFisica: qty,
+                modoOperacion: ui.fMode.value,
+                loteContado: ui.fLote.value.trim(),
+                vencimientoContado: ui.fVenc.value,
+                ubicacion: ui.fUbicacion.value.trim(),
+                usuario: operador,
+                fechaRegistro: new Date().toISOString()
+            };
+
+            await db.pendientes.put(registro);
+            await updatePendingCounter();
+
+            showToast(`✅ ${currentProduct.descripcion} → ${qty} ${currentProduct.unidad}`);
+
+            // Reset vista
+            ui.productContainer.classList.add('hidden');
+            ui.productContainer.classList.remove('flex');
+            ui.emptyState.classList.remove('hidden');
+            ui.manualCode.value = '';
+            currentProduct = null;
+
+            // Intentar subir en background
+            syncData();
+            await updateStats();
+            
+            ui.manualCode.focus();
+        }
+
+        // =============================================
+        // 11. Exportar Datos
+        // =============================================
+        async function exportData() {
+            if (!navigator.onLine) { alert("Debes estar conectado para exportar"); return; }
+            showLoading("Generando consolidado...");
+            try {
+                // Primero sincronizar pendientes
+                await syncData();
+
+                const res = await fetch(`${apiBaseUrl}/inventario/exportar-conciliacion`);
+                if (!res.ok) throw new Error("Error del servidor");
+                const data = await res.json();
+                
+                if(data.length === 0) {
+                    alert("No hay tomas registradas en el servidor aún.");
+                    return;
+                }
+
+                // Build CSV with BOM for Excel compatibility
+                const bom = '\uFEFF';
+                const headers = "Codigo;CodigoDeBarras;Descripcion;Unidad;Costo;Precio;TotalFisicoContado;Lotes;TomasTotales";
+                const rows = data.map(obj => 
+                    `"${obj.codigo}";"${obj.codigoDeBarras}";"${obj.descripcion}";"${obj.unidad}";"${obj.costo}";"${obj.precio}";"${obj.totalFisicoContado}";"${obj.lotes}";"${obj.tomasTotales}"`
+                ).join("\n");
+                const csv = bom + headers + "\n" + rows;
+
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement("a");
+                link.href = URL.createObjectURL(blob);
+                link.download = `Conciliacion_Euridice_${new Date().toISOString().split('T')[0]}.csv`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                showToast("📥 Archivo CSV descargado");
+            } catch(e) {
+                alert("Error al exportar: " + e.message);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // =============================================
+        // 12. Lector HTML5 QRCode (Cámara Trasera)
+        // =============================================
+        function initScanner() {
+            const readerEl = document.getElementById("reader");
+            
+            Html5Qrcode.getCameras().then(devices => {
+                if (devices && devices.length) {
+                    const html5QrcodeScanner = new Html5Qrcode("reader");
+                    const config = { fps: 10, qrbox: { width: 250, height: 150 }, aspectRatio: 1.0 };
+
+                    html5QrcodeScanner.start(
+                        { facingMode: "environment" }, 
+                        config, 
+                        (decodedText) => {
+                            ui.manualCode.value = decodedText;
+                            searchProduct(decodedText);
+                        },
+                        () => {}
+                    ).catch(err => {
+                        console.warn("Cámara no disponible:", err);
+                        readerEl.innerHTML = '<p class="text-center text-xs text-gray-400 p-4">📷 No se pudo iniciar la cámara. Use el campo de búsqueda manual o un lector USB/Bluetooth.</p>';
+                    });
+                } else {
+                    readerEl.innerHTML = '<p class="text-center text-xs text-gray-400 p-4">📷 Sin cámara detectada (normal en PC). En dispositivos móviles se activará automáticamente. Use el campo manual o un lector USB/Bluetooth.</p>';
+                }
+            }).catch(err => {
+                console.warn("Error accediendo cámaras:", err);
+                readerEl.innerHTML = '<p class="text-center text-xs text-gray-400 p-4">📷 Sin acceso a cámara (normal en PC de escritorio). En móviles se activará automáticamente. Use el campo manual.</p>';
+            });
+        }
+
+        // =============================================
+        // Arranque
+        // =============================================
+        window.onload = init;
+
+    </script>
+</body>
+</html>
