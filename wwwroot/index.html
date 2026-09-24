@@ -127,16 +127,23 @@
                 <h2 id="prod-desc" class="font-bold text-lg mb-1 leading-tight"></h2>
                 <div class="grid grid-cols-2 gap-2 text-sm text-gray-600 mb-2">
                     <div><span class="font-semibold">Cód:</span> <span id="prod-code"></span></div>
-                    <div><span class="font-semibold">Cód. Barra:</span> <span id="prod-barcode"></span></div>
-                    <div><span class="font-semibold">Unidad:</span> <span id="prod-unit"></span></div>
                     <div><span class="font-semibold">Cód. Old:</span> <span id="prod-oldcode"></span></div>
+                    <div><span class="font-semibold">Unidad:</span> <span id="prod-unit"></span></div>
+                    <div><span class="font-semibold">Precio:</span> $<span id="prod-price"></span></div>
+                </div>
+                <!-- Barra de Código de Barras y Botón de Actualizar -->
+                <div class="flex items-center justify-between bg-blue-50/70 p-2.5 rounded-lg border border-blue-100 mb-2 gap-2">
+                    <div class="truncate">
+                        <span class="text-xs font-semibold text-gray-600">Cód. Barra:</span>
+                        <span id="prod-barcode" class="font-mono font-bold text-blue-900 ml-1 text-sm"></span>
+                    </div>
+                    <button type="button" id="btn-update-barcode" class="text-xs bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold px-2.5 py-1.5 rounded-lg shadow-sm flex items-center gap-1.5 whitespace-nowrap transition-colors">
+                        📷 <span>Actualizar Barra</span>
+                    </button>
                 </div>
                 <div class="grid grid-cols-2 gap-2 text-sm text-gray-700 bg-gray-50 p-2 rounded">
-                    <div><span class="font-semibold">Precio:</span> $<span id="prod-price"></span></div>
                     <div><span class="font-semibold">Costo:</span> $<span id="prod-cost"></span></div>
-                </div>
-                <div class="mt-2 text-xs text-gray-500 bg-yellow-50 p-2 rounded border border-yellow-100">
-                    <span class="font-semibold text-yellow-700">Lote Histórico:</span> <span id="prod-ref-lote"></span>
+                    <div class="truncate"><span class="font-semibold">Lote Hist:</span> <span id="prod-ref-lote"></span></div>
                 </div>
             </div>
 
@@ -212,6 +219,77 @@
                 </button>
             </div>
             <div id="search-results-list" class="overflow-y-auto p-2 flex-1 space-y-2">
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Actualizar Código de Barra con Cámara o Manual -->
+    <div id="barcode-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-[95] hidden p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
+            <div class="p-4 border-b flex justify-between items-center bg-blue-50">
+                <div>
+                    <h3 class="font-bold text-base text-gray-800 flex items-center gap-1.5">
+                        📷 Actualizar Código de Barra
+                    </h3>
+                    <p id="barcode-modal-subtitle" class="text-xs text-blue-800 font-semibold truncate max-w-[260px]"></p>
+                </div>
+                <button type="button" id="btn-close-barcode-modal" class="text-gray-500 hover:text-gray-800 p-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
+            
+            <div class="p-4 space-y-3">
+                <p class="text-xs text-gray-600">
+                    Apunta con la cámara al nuevo código de barras físico del empaque o ingrésalo manualmente.
+                </p>
+
+                <!-- Visor embebido para leer el nuevo código -->
+                <div class="relative bg-gray-900 rounded-lg overflow-hidden min-h-[170px] flex items-center justify-center text-white text-xs border border-gray-700">
+                    <div id="barcode-modal-reader" class="w-full"></div>
+                </div>
+
+                <div class="space-y-1.5 pt-1">
+                    <label class="block text-xs font-semibold text-gray-700">O escribe / edita el código:</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="input-new-barcode" placeholder="Nuevo código de barra..." class="flex-1 border rounded-lg p-2 text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        <button type="button" id="btn-save-new-barcode" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow transition-colors">
+                            Guardar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Vincular Código Desconocido a Producto Existente -->
+    <div id="link-unknown-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-[95] hidden p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
+            <div class="p-4 border-b flex justify-between items-center bg-amber-50">
+                <div>
+                    <h3 class="font-bold text-base text-amber-900 flex items-center gap-1.5">
+                        ⚠️ Código No Encontrado
+                    </h3>
+                    <p class="text-xs text-amber-700">Código leído: <span id="unknown-barcode-val" class="font-mono font-bold text-gray-900"></span></p>
+                </div>
+                <button type="button" id="btn-close-unknown-modal" class="text-gray-500 hover:text-gray-800 p-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
+            
+            <div class="p-4 space-y-3">
+                <p class="text-xs text-gray-600 leading-relaxed">
+                    Este código no está registrado en el catálogo. Puedes buscar el medicamento correspondiente para asignarle este código permanente.
+                </p>
+
+                <div class="space-y-2">
+                    <input type="text" id="input-search-link" placeholder="Escribe el nombre o código interno del medicamento..." class="w-full border rounded-lg p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <button type="button" id="btn-search-link" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg text-xs shadow-sm">
+                        🔍 Buscar Medicamento para Vincular
+                    </button>
+                </div>
+
+                <div id="link-search-results" class="max-h-[220px] overflow-y-auto space-y-1.5 hidden pt-2 border-t">
+                </div>
             </div>
         </div>
     </div>
@@ -361,7 +439,21 @@
             csvExistencias: document.getElementById('csv-existencias'),
             btnExportAdmin: document.getElementById('btn-export-admin'),
             btnRefreshCatalog: document.getElementById('btn-refresh-catalog'),
-            toast: document.getElementById('toast')
+            toast: document.getElementById('toast'),
+            // Actualizar Código de Barra
+            btnUpdateBarcode: document.getElementById('btn-update-barcode'),
+            barcodeModal: document.getElementById('barcode-modal'),
+            barcodeModalSubtitle: document.getElementById('barcode-modal-subtitle'),
+            btnCloseBarcodeModal: document.getElementById('btn-close-barcode-modal'),
+            inputNewBarcode: document.getElementById('input-new-barcode'),
+            btnSaveNewBarcode: document.getElementById('btn-save-new-barcode'),
+            // Vincular Código Desconocido
+            linkUnknownModal: document.getElementById('link-unknown-modal'),
+            unknownBarcodeVal: document.getElementById('unknown-barcode-val'),
+            btnCloseUnknownModal: document.getElementById('btn-close-unknown-modal'),
+            inputSearchLink: document.getElementById('input-search-link'),
+            btnSearchLink: document.getElementById('btn-search-link'),
+            linkSearchResults: document.getElementById('link-search-results')
         };
 
         // =============================================
@@ -408,6 +500,29 @@
             ui.btnModeSumar.addEventListener('click', (e) => { e.preventDefault(); setMode('sumar'); });
             ui.btnModeNuevo.addEventListener('click', (e) => { e.preventDefault(); setMode('nuevo_lote'); });
             ui.fOperador.addEventListener('change', () => setOperador(ui.fOperador.value));
+
+            // Eventos de Actualizar Código de Barra
+            ui.btnUpdateBarcode?.addEventListener('click', () => openUpdateBarcodeModal(currentProduct));
+            ui.btnCloseBarcodeModal?.addEventListener('click', closeUpdateBarcodeModal);
+            ui.btnSaveNewBarcode?.addEventListener('click', () => {
+                if (currentProduct) saveNewBarcode(currentProduct.codigo, ui.inputNewBarcode.value);
+            });
+            ui.inputNewBarcode?.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (currentProduct) saveNewBarcode(currentProduct.codigo, ui.inputNewBarcode.value);
+                }
+            });
+
+            // Eventos de Vincular Código Desconocido
+            ui.btnCloseUnknownModal?.addEventListener('click', closeLinkUnknownModal);
+            ui.btnSearchLink?.addEventListener('click', searchProductsToLink);
+            ui.inputSearchLink?.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    searchProductsToLink();
+                }
+            });
 
             // Sondeo periódico automático
             syncInterval = setInterval(() => {
@@ -702,6 +817,199 @@
         }
 
         // =============================================
+        // 9.5 Actualización y Vinculación de Códigos de Barra
+        // =============================================
+        let modalBarcodeScanner = null;
+        let isModalScannerRunning = false;
+        let currentUnknownBarcode = '';
+
+        async function openUpdateBarcodeModal(product) {
+            if (!product) return;
+            ui.barcodeModalSubtitle.textContent = `${product.descripcion} (Cód: ${product.codigo})`;
+            ui.inputNewBarcode.value = product.codigoBarra || '';
+            ui.barcodeModal.classList.remove('hidden');
+
+            // Iniciar escáner de cámara dentro del modal
+            await startModalBarcodeScanner(product);
+        }
+
+        async function closeUpdateBarcodeModal() {
+            await stopModalBarcodeScanner();
+            ui.barcodeModal.classList.add('hidden');
+        }
+
+        async function startModalBarcodeScanner(product) {
+            if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                return;
+            }
+
+            try {
+                if (isModalScannerRunning) {
+                    await stopModalBarcodeScanner();
+                }
+
+                if (!modalBarcodeScanner) {
+                    modalBarcodeScanner = new Html5Qrcode("barcode-modal-reader", {
+                        experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+                        verbose: false
+                    });
+                }
+
+                let cameras = [];
+                try { cameras = await Html5Qrcode.getCameras(); } catch (e) {}
+                let selectedId = localStorage.getItem('euridice_selected_camera_id');
+                if (!selectedId && cameras && cameras.length > 0) {
+                    const best = findBestMainBackCamera(cameras);
+                    if (best) selectedId = best.id;
+                }
+
+                const config = {
+                    fps: 15,
+                    qrbox: function(w, h) {
+                        return { width: Math.min(w * 0.9, 280), height: Math.min(h * 0.55, 140) };
+                    },
+                    aspectRatio: 1.333333
+                };
+
+                const cameraConfig = selectedId ? selectedId : { facingMode: "environment" };
+
+                await modalBarcodeScanner.start(
+                    cameraConfig,
+                    config,
+                    async (decodedText) => {
+                        if (navigator.vibrate) navigator.vibrate(80);
+                        ui.inputNewBarcode.value = decodedText;
+                        await stopModalBarcodeScanner();
+                        
+                        const confirmar = confirm(`¿Asignar el código de barras "${decodedText}" a:\n\n${product.descripcion}?`);
+                        if (confirmar) {
+                            await saveNewBarcode(product.codigo, decodedText);
+                        }
+                    },
+                    (err) => {}
+                );
+
+                isModalScannerRunning = true;
+            } catch (err) {
+                console.warn("Cámara no disponible en modal de código:", err);
+            }
+        }
+
+        async function stopModalBarcodeScanner() {
+            if (modalBarcodeScanner && isModalScannerRunning) {
+                try {
+                    await modalBarcodeScanner.stop();
+                } catch (e) {
+                    console.warn(e);
+                }
+            }
+            isModalScannerRunning = false;
+        }
+
+        async function saveNewBarcode(codigoProducto, newBarcode) {
+            newBarcode = (newBarcode || '').trim();
+            if (!newBarcode) {
+                alert("Ingrese un código de barras válido.");
+                return;
+            }
+
+            showLoading("Guardando nuevo código de barras...");
+            try {
+                // 1. Actualizar en IndexedDB local inmediatamente
+                await db.productos.update(codigoProducto, { codigoBarra: newBarcode });
+
+                // 2. Si el producto activo en pantalla es este, actualizar su visualización
+                if (currentProduct && currentProduct.codigo === codigoProducto) {
+                    currentProduct.codigoBarra = newBarcode;
+                    ui.pBar.textContent = newBarcode;
+                    ui.manualCode.value = newBarcode;
+                }
+
+                // 3. Sincronizar al servidor si hay conexión
+                if (navigator.onLine) {
+                    try {
+                        const res = await fetch(`${apiBaseUrl}/productos/actualizar-barcode`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ codigo: codigoProducto, codigoBarra: newBarcode })
+                        });
+                        if (!res.ok) {
+                            console.warn("El servidor no pudo actualizar el código en este momento.");
+                        }
+                    } catch (e) {
+                        console.warn("Fallo al sincronizar código con el servidor (offline):", e);
+                    }
+                }
+
+                await closeUpdateBarcodeModal();
+                showToast(`✅ Código de barra guardado: ${newBarcode}`);
+            } catch (e) {
+                alert("Error al actualizar código de barra: " + e.message);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function openLinkUnknownModal(scannedCode) {
+            currentUnknownBarcode = (scannedCode || '').trim();
+            ui.unknownBarcodeVal.textContent = currentUnknownBarcode;
+            ui.inputSearchLink.value = '';
+            ui.linkSearchResults.innerHTML = '';
+            ui.linkSearchResults.classList.add('hidden');
+            ui.linkUnknownModal.classList.remove('hidden');
+            setTimeout(() => ui.inputSearchLink.focus(), 100);
+        }
+
+        function closeLinkUnknownModal() {
+            ui.linkUnknownModal.classList.add('hidden');
+            currentUnknownBarcode = '';
+        }
+
+        async function searchProductsToLink() {
+            const term = (ui.inputSearchLink.value || '').trim();
+            if (!term) return;
+
+            const termUpper = term.toUpperCase();
+            const matches = await db.productos.filter(p => 
+                p.descripcion.toUpperCase().includes(termUpper) ||
+                p.codigo.includes(term) ||
+                p.codigoOld.includes(term)
+            ).limit(25).toArray();
+
+            ui.linkSearchResults.innerHTML = '';
+            ui.linkSearchResults.classList.remove('hidden');
+
+            if (matches.length === 0) {
+                ui.linkSearchResults.innerHTML = '<p class="text-xs text-gray-500 text-center py-3">No se encontraron medicamentos con esa búsqueda.</p>';
+                return;
+            }
+
+            matches.forEach(m => {
+                const item = document.createElement('div');
+                item.className = 'p-2.5 bg-gray-50 border rounded-lg hover:bg-blue-50 cursor-pointer flex justify-between items-center text-xs transition-colors';
+                item.innerHTML = `
+                    <div class="truncate mr-2">
+                        <div class="font-bold text-gray-800 truncate">${m.descripcion}</div>
+                        <div class="text-[11px] text-gray-500">Cód: ${m.codigo} | Barra actual: ${m.codigoBarra || 'Sin código'}</div>
+                    </div>
+                    <button type="button" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap shadow-sm">
+                        Asignar
+                    </button>
+                `;
+                item.onclick = async () => {
+                    const confirmLink = confirm(`¿Deseas asignar el código de barras "${currentUnknownBarcode}" al producto:\n\n${m.descripcion} (Cód: ${m.codigo})?`);
+                    if (confirmLink) {
+                        await saveNewBarcode(m.codigo, currentUnknownBarcode);
+                        closeLinkUnknownModal();
+                        const updated = await db.productos.get({ codigo: m.codigo });
+                        displayProduct(updated || m);
+                    }
+                };
+                ui.linkSearchResults.appendChild(item);
+            });
+        }
+
+        // =============================================
         // 10. Búsqueda y Visualización
         // =============================================
         async function searchProduct(term) {
@@ -733,8 +1041,13 @@
             if (prod) {
                 displayProduct(prod);
             } else {
-                alert("Producto no encontrado. Intente con otra descripción o código.");
-                ui.manualCode.select();
+                // Si el término parece un código de barras (al menos 3 dígitos y sin espacios múltiples)
+                if (term.length >= 3 && !term.includes(' ')) {
+                    openLinkUnknownModal(term);
+                } else {
+                    alert("Producto no encontrado. Intente con otra descripción o código.");
+                    ui.manualCode.select();
+                }
             }
         }
 
@@ -763,7 +1076,8 @@
 
             ui.pDesc.textContent = prod.descripcion;
             ui.pCode.textContent = prod.codigo;
-            ui.pBar.textContent = prod.codigoBarra || 'N/D';
+            ui.pBar.textContent = prod.codigoBarra ? prod.codigoBarra : '⚠️ Sin código registrado';
+            ui.pBar.className = prod.codigoBarra ? 'font-mono font-bold text-blue-900 ml-1 text-sm' : 'text-xs text-amber-700 italic ml-1 font-semibold';
             ui.pUnit.textContent = prod.unidad;
             ui.pOld.textContent = prod.codigoOld || 'N/D';
             ui.pPrice.textContent = Number(prod.precio).toFixed(2);

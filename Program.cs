@@ -148,6 +148,28 @@ app.MapPost("/api/inventario/resetear-conteos", async (InventarioDbContext db) =
     return Results.Ok(new { eliminados = count, mensaje = $"Se han reseteado {count} registros de conteos físicos. El catálogo se mantiene intacto." });
 }).DisableAntiforgery();
 
+// Actualizar o asignar código de barra a un producto existente
+app.MapPost("/api/productos/actualizar-barcode", async (ActualizarBarcodeRequest req, InventarioDbContext db) =>
+{
+    if (string.IsNullOrWhiteSpace(req.Codigo))
+        return Results.BadRequest("El código de producto es requerido");
+
+    var prod = await db.Productos.FirstOrDefaultAsync(p => p.Codigo == req.Codigo.Trim());
+    if (prod == null)
+        return Results.NotFound("Producto no encontrado");
+
+    var nuevoBarcode = (req.CodigoBarra ?? string.Empty).Trim();
+    prod.CodigoBarra = nuevoBarcode;
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new 
+    { 
+        mensaje = $"Código de barra actualizado exitosamente para {prod.Descripcion}", 
+        codigo = prod.Codigo, 
+        codigoBarra = prod.CodigoBarra 
+    });
+}).DisableAntiforgery();
+
 // Cargar CSV en caliente
 app.MapPost("/api/productos/cargar-csv", async (HttpRequest request, InventarioDbContext db) =>
 {
@@ -247,6 +269,12 @@ public class ProductoCatalogo
     public decimal Precio { get; set; }
     public decimal Costo { get; set; }
     public string LoteReferencia { get; set; } = string.Empty;
+}
+
+public class ActualizarBarcodeRequest
+{
+    public string Codigo { get; set; } = string.Empty;
+    public string CodigoBarra { get; set; } = string.Empty;
 }
 
 public class ConteoFisico
