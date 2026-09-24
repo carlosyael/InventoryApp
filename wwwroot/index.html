@@ -79,16 +79,28 @@
                     </svg>
                     Lector de Código
                 </span>
-                <button type="button" id="btn-toggle-cam" class="text-xs px-2.5 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold border border-blue-200">
-                    Encender Cámara
-                </button>
+                <div class="flex items-center gap-1.5">
+                    <button type="button" id="btn-switch-cam" class="hidden text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold border border-gray-300 flex items-center gap-1">
+                        🔄 <span>Cambiar Lente</span>
+                    </button>
+                    <button type="button" id="btn-toggle-cam" class="text-xs px-2.5 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold border border-blue-200">
+                        Encender Cámara
+                    </button>
+                </div>
+            </div>
+
+            <!-- Selector desplegable de cámara -->
+            <div id="camera-select-row" class="hidden mb-2.5 flex items-center gap-2 bg-blue-50 p-2 rounded-lg border border-blue-100 text-xs">
+                <label for="camera-select" class="font-medium text-blue-900 whitespace-nowrap">📷 Lente:</label>
+                <select id="camera-select" class="flex-1 bg-white border border-blue-300 rounded px-2 py-1 text-xs text-gray-800 font-medium focus:outline-none focus:ring-1 focus:ring-blue-500">
+                </select>
             </div>
 
             <div id="reader-wrapper" class="relative rounded-lg overflow-hidden border border-gray-200 bg-gray-50 mb-3 min-h-[140px] flex items-center justify-center">
                 <div id="reader" class="w-full hidden"></div>
                 <div id="camera-placeholder" class="text-center p-4">
                     <p class="text-sm font-semibold text-gray-700 mb-1">Cámara de Código de Barras</p>
-                    <p class="text-xs text-gray-500 mb-3">Toca el botón para solicitar permiso y activar la cámara trasera de tu móvil.</p>
+                    <p class="text-xs text-gray-500 mb-3">Toca para activar la cámara principal (1x) de tu teléfono.</p>
                     <button type="button" id="btn-start-camera-cta" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-4 py-2 rounded-lg shadow-sm">
                         📸 Activar Cámara
                     </button>
@@ -358,7 +370,14 @@
 
             // Eventos de cámara
             document.getElementById("btn-toggle-cam")?.addEventListener("click", toggleCamera);
-            document.getElementById("btn-start-camera-cta")?.addEventListener("click", startCamera);
+            document.getElementById("btn-switch-cam")?.addEventListener("click", switchCamera);
+            document.getElementById("btn-start-camera-cta")?.addEventListener("click", () => startCamera());
+            document.getElementById("camera-select")?.addEventListener("change", async (e) => {
+                if (e.target.value) {
+                    localStorage.setItem('euridice_selected_camera_id', e.target.value);
+                    await startCamera(e.target.value);
+                }
+            });
 
             // Intentar auto-iniciar cámara
             startCamera().catch(err => {
@@ -833,10 +852,103 @@
         }
 
         // =============================================
-        // 12. Lector HTML5 QRCode (Cámara Trasera)
+        // 12. Lector HTML5 QRCode (Gestión Inteligente de Lentes)
         // =============================================
         let html5QrScanner = null;
         let isScannerRunning = false;
+        let availableCameras = [];
+        let currentCameraIndex = 0;
+
+        function findBestMainBackCamera(cameras) {
+            if (!cameras || cameras.length === 0) return null;
+
+            // 1. Si el usuario ya eligió una cámara previamente en este teléfono, usarla
+            const savedCamId = localStorage.getItem('euridice_selected_camera_id');
+            if (savedCamId) {
+                const found = cameras.find(c => c.id === savedCamId);
+                if (found) return found;
+            }
+
+            // 2. Filtrar cámaras traseras (ignorar front/selfie/delantera)
+            const backCameras = cameras.filter(c => {
+                const label = (c.label || '').toLowerCase();
+                return !label.includes('front') && !label.includes('user') && !label.includes('selfie') && !label.includes('delantera');
+            });
+
+            const pool = backCameras.length > 0 ? backCameras : cameras;
+
+            // 3. Descartar cámaras que explícitamente sean gran angular, ultra wide, macro o profundidad
+            const standardCameras = pool.filter(c => {
+                const label = (c.label || '').toLowerCase();
+                const isUltra = label.includes('ultra') || 
+                                label.includes('0.5') || 
+                                label.includes('wide-angle') || 
+                                label.includes('macro') || 
+                                label.includes('depth');
+                return !isUltra;
+            });
+
+            if (standardCameras.length > 0) {
+                // Priorizar cámara con etiqueta principal / 1x / back camera
+                const main = standardCameras.find(c => {
+                    const l = (c.label || '').toLowerCase();
+                    return l.includes('main') || l.includes('primary') || l.includes('1x') || l === 'back camera' || l.includes('camera2 0') || l.includes('camera 0');
+                });
+                return main || standardCameras[0];
+            }
+
+            return pool[0];
+        }
+
+        function populateCameraSelect(cameras, activeDeviceId) {
+            const select = document.getElementById("camera-select");
+            const row = document.getElementById("camera-select-row");
+            const switchBtn = document.getElementById("btn-switch-cam");
+            if (!select) return;
+
+            availableCameras = cameras || [];
+
+            if (availableCameras.length > 1) {
+                if (row) row.classList.remove("hidden");
+                if (switchBtn) switchBtn.classList.remove("hidden");
+                select.innerHTML = '';
+
+                availableCameras.forEach((cam, idx) => {
+                    const opt = document.createElement("option");
+                    opt.value = cam.id;
+                    let cleanLabel = cam.label || `Lente ${idx + 1}`;
+                    const lower = cleanLabel.toLowerCase();
+                    
+                    if (lower.includes('ultra') || lower.includes('0.5') || lower.includes('wide-angle')) {
+                        cleanLabel += " ⚠️ (Gran Angular)";
+                    } else if (lower.includes('front') || lower.includes('selfie') || lower.includes('delantera')) {
+                        cleanLabel += " (Frontal)";
+                    } else if (idx === 0 || lower.includes('main') || lower.includes('primary') || lower === 'back camera' || lower.includes('1x')) {
+                        cleanLabel += " ⭐ (Principal 1x Recomendado)";
+                    }
+
+                    opt.textContent = cleanLabel;
+                    if (cam.id === activeDeviceId) opt.selected = true;
+                    select.appendChild(opt);
+                });
+            } else {
+                if (row) row.classList.add("hidden");
+                if (switchBtn) switchBtn.classList.add("hidden");
+            }
+        }
+
+        async function switchCamera() {
+            if (!availableCameras || availableCameras.length <= 1) return;
+            currentCameraIndex = (currentCameraIndex + 1) % availableCameras.length;
+            const nextCam = availableCameras[currentCameraIndex];
+            if (nextCam) {
+                localStorage.setItem('euridice_selected_camera_id', nextCam.id);
+                const select = document.getElementById("camera-select");
+                if (select) select.value = nextCam.id;
+                showToast(`Cambiando a: ${nextCam.label || 'Siguiente cámara'}`);
+                await startCamera(nextCam.id);
+            }
+        }
 
         async function toggleCamera() {
             if (isScannerRunning) {
@@ -846,12 +958,12 @@
             }
         }
 
-        async function startCamera() {
+        async function startCamera(targetDeviceId = null) {
             const readerEl = document.getElementById("reader");
             const placeholderEl = document.getElementById("camera-placeholder");
             const toggleBtn = document.getElementById("btn-toggle-cam");
 
-            // Validar si el contexto es seguro (HTTPS o localhost)
+            // Validar contexto seguro
             if (!window.isSecureContext) {
                 alert("⚠️ Los navegadores móviles bloquean la cámara por HTTP.\n\nAsegúrate de ingresar mediante tu dominio con https:// (Cloudflare Tunnel).");
                 return;
@@ -863,12 +975,17 @@
             }
 
             try {
-                if (!html5QrScanner) {
-                    html5QrScanner = new Html5Qrcode("reader");
-                }
-
                 if (isScannerRunning) {
                     await stopCamera();
+                }
+
+                if (!html5QrScanner) {
+                    html5QrScanner = new Html5Qrcode("reader", {
+                        experimentalFeatures: {
+                            useBarCodeDetectorIfSupported: true
+                        },
+                        verbose: false
+                    });
                 }
 
                 placeholderEl.classList.add("hidden");
@@ -878,25 +995,43 @@
                     toggleBtn.className = "text-xs px-2.5 py-1 rounded bg-yellow-50 text-yellow-700 font-semibold border border-yellow-200";
                 }
 
+                // 1. Obtener cámaras disponibles
+                let cameras = [];
+                try {
+                    cameras = await Html5Qrcode.getCameras();
+                } catch (e) {
+                    console.warn("No se pudieron enumerar cámaras aún:", e);
+                }
+
+                // 2. Determinar la mejor cámara (Principal 1x en vez de Gran Angular)
+                let selectedId = targetDeviceId;
+                if (!selectedId && cameras && cameras.length > 0) {
+                    const best = findBestMainBackCamera(cameras);
+                    if (best) selectedId = best.id;
+                }
+
                 const config = {
-                    fps: 10,
-                    qrbox: { width: 260, height: 160 },
+                    fps: 15,
+                    qrbox: function(viewfinderWidth, viewfinderHeight) {
+                        const width = Math.min(viewfinderWidth * 0.9, 320);
+                        const height = Math.min(viewfinderHeight * 0.5, 180);
+                        return { width: Math.floor(width), height: Math.floor(height) };
+                    },
                     aspectRatio: 1.333333
                 };
 
-                // Solicitud DIRECTA de cámara trasera -> Esto activa el modal de permisos en móviles
+                // Si identificamos la cámara específica por ID, usamos el ID para no caer en el gran angular
+                const cameraConfig = selectedId ? selectedId : { facingMode: "environment" };
+
                 await html5QrScanner.start(
-                    { facingMode: "environment" },
+                    cameraConfig,
                     config,
                     (decodedText) => {
-                        // Vibración de confirmación
                         if (navigator.vibrate) navigator.vibrate(80);
                         ui.manualCode.value = decodedText;
                         searchProduct(decodedText);
                     },
-                    (errorMessage) => {
-                        // Ruido habitual de escaneo
-                    }
+                    (errorMessage) => {}
                 );
 
                 isScannerRunning = true;
@@ -904,6 +1039,30 @@
                     toggleBtn.textContent = "Apagar Cámara";
                     toggleBtn.className = "text-xs px-2.5 py-1 rounded bg-red-50 text-red-700 hover:bg-red-100 font-semibold border border-red-200";
                 }
+
+                // 3. Una vez otorgado permiso, actualizar selector con los nombres reales de las cámaras
+                try {
+                    const freshCameras = await Html5Qrcode.getCameras();
+                    if (freshCameras && freshCameras.length > 0) {
+                        availableCameras = freshCameras;
+                        const activeId = selectedId || (availableCameras[0] ? availableCameras[0].id : null);
+                        populateCameraSelect(availableCameras, activeId);
+
+                        // Si entramos sin targetDeviceId y el navegador escogió el gran angular por defecto,
+                        // corregir automáticamente al lente principal 1x
+                        if (!targetDeviceId && !localStorage.getItem('euridice_selected_camera_id')) {
+                            const best = findBestMainBackCamera(freshCameras);
+                            if (best && selectedId && best.id !== selectedId) {
+                                localStorage.setItem('euridice_selected_camera_id', best.id);
+                                await startCamera(best.id);
+                                return;
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.warn("Error actualizando catálogo de cámaras:", e);
+                }
+
             } catch (err) {
                 console.error("Error al iniciar cámara:", err);
                 isScannerRunning = false;
