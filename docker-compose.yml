@@ -6,15 +6,11 @@ services:
     container_name: inventario_euridice
     restart: always
     ports:
-      - "80:80"
-      - "443:443"
+      - "8080:80"
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_URLS=https://+:443;http://+:80
-      - ASPNETCORE_Kestrel__Certificates__Default__Password=Euridice123!
-      - ASPNETCORE_Kestrel__Certificates__Default__Path=/https/aspnetapp.pfx
+      - ASPNETCORE_URLS=http://+:80
     volumes:
       - ./data:/app/data
-      - ./https:/https:ro
       - ./Productos_Migrados.csv:/app/Productos_Migrados.csv:ro
       - ./ExistenciaAlmacen_Migrado.csv:/app/ExistenciaAlmacen_Migrado.csv:ro
