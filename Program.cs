@@ -215,7 +215,7 @@ app.MapGet("/api/inventario/exportar-existencias-csv", async (bool? soloContados
 
     foreach (var p in productos)
     {
-        var codAnterior = !string.IsNullOrWhiteSpace(p.CodigoOld) ? p.CodigoOld : p.Codigo;
+        var codId = p.Codigo; // El ID del producto ("00000001", etc.), tal como viene en la plantilla
         var unidad = !string.IsNullOrWhiteSpace(p.Unidad) ? p.Unidad : "UNIDAD";
 
         if (conteosAgrupados.TryGetValue(p.Codigo, out var gruposLotes))
@@ -228,13 +228,13 @@ app.MapGet("/api/inventario/exportar-existencias-csv", async (bool? soloContados
                     ? ((long)loteItem.TotalFisico).ToString() 
                     : loteItem.TotalFisico.ToString(CultureInfo.InvariantCulture);
 
-                sb.AppendLine($"\"{codAnterior}\";\"{unidad}\";\"{existenciaStr}\";\"1\";\"{loteLimpio}\";\"{fechaVenc}\"");
+                sb.AppendLine($"\"{codId}\";\"{unidad}\";\"{existenciaStr}\";\"1\";\"{loteLimpio}\";\"{fechaVenc}\"");
             }
         }
         else if (!solo)
         {
             // Producto no contado: Existencia 0
-            sb.AppendLine($"\"{codAnterior}\";\"{unidad}\";\"0\";\"1\";\"\";\"\"");
+            sb.AppendLine($"\"{codId}\";\"{unidad}\";\"0\";\"1\";\"\";\"\"");
         }
     }
 
