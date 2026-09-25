@@ -180,6 +180,89 @@ app.MapGet("/api/inventario/exportar-csv", async (InventarioDbContext db) =>
     return Results.File(Encoding.UTF8.GetBytes(sb.ToString()), "text/csv", $"Conciliacion_Euridice_{DateTime.Now:yyyy-MM-dd}.csv");
 });
 
+// Exportar Plantilla Existencia en Almacén (con Lote y Fecha de Vencimiento separada en formato Date)
+app.MapGet("/api/inventario/exportar-existencias-csv", async (bool? soloContados, string? formatoFecha, InventarioDbContext db) =>
+{
+    var allConteos = await db.Conteos.ToListAsync();
+    var productos = await db.Productos.ToListAsync();
+
+    bool solo = soloContados ?? false;
+    string fmt = string.IsNullOrWhiteSpace(formatoFecha) ? "YYYY-MM-DD" : formatoFecha.Trim();
+
+    // Agrupar conteos por ProductoCodigo, Lote y Vencimiento
+    var conteosAgrupados = allConteos
+        .GroupBy(c => new 
+        { 
+            c.ProductoCodigo, 
+            Lote = (c.LoteContado ?? string.Empty).Trim(), 
+            Venc = (c.VencimientoContado ?? string.Empty).Trim() 
+        })
+        .Select(g => new
+        {
+            Codigo = g.Key.ProductoCodigo,
+            LoteRaw = g.Key.Lote,
+            VencRaw = g.Key.Venc,
+            TotalFisico = g.Sum(x => x.CantidadFisica)
+        })
+        .GroupBy(x => x.Codigo)
+        .ToDictionary(g => g.Key, g => g.ToList());
+
+    var sb = new StringBuilder();
+    // Cabecera igual a la plantilla de ExistenciaAlmacen, con Fecha Vencimiento separada
+    sb.AppendLine("\"Codigo Anterior Producto\";\"Nombre Unidad\";\"Existencia\";\"codigo Almacen\";\"LOTE\";\"Fecha Vencimiento\"");
+
+    var codigosProcesados = new HashSet<string>();
+
+    foreach (var p in productos)
+    {
+        var codAnterior = !string.IsNullOrWhiteSpace(p.CodigoOld) ? p.CodigoOld : p.Codigo;
+        var unidad = !string.IsNullOrWhiteSpace(p.Unidad) ? p.Unidad : "UNIDAD";
+
+        if (conteosAgrupados.TryGetValue(p.Codigo, out var gruposLotes))
+        {
+            codigosProcesados.Add(p.Codigo);
+            foreach (var loteItem in gruposLotes)
+            {
+                var (loteLimpio, fechaVenc) = FormatoInventarioHelper.ProcesarLoteYFecha(loteItem.LoteRaw, loteItem.VencRaw, fmt);
+                var existenciaStr = loteItem.TotalFisico % 1 == 0 
+                    ? ((long)loteItem.TotalFisico).ToString() 
+                    : loteItem.TotalFisico.ToString(CultureInfo.InvariantCulture);
+
+                sb.AppendLine($"\"{codAnterior}\";\"{unidad}\";\"{existenciaStr}\";\"1\";\"{loteLimpio}\";\"{fechaVenc}\"");
+            }
+        }
+        else if (!solo)
+        {
+            // Producto no contado: Existencia 0
+            sb.AppendLine($"\"{codAnterior}\";\"{unidad}\";\"0\";\"1\";\"\";\"\"");
+        }
+    }
+
+    // Por si hay algún conteo de un producto que no figuraba en el catálogo
+    foreach (var kvp in conteosAgrupados)
+    {
+        if (!codigosProcesados.Contains(kvp.Key))
+        {
+            foreach (var loteItem in kvp.Value)
+            {
+                var (loteLimpio, fechaVenc) = FormatoInventarioHelper.ProcesarLoteYFecha(loteItem.LoteRaw, loteItem.VencRaw, fmt);
+                var existenciaStr = loteItem.TotalFisico % 1 == 0 
+                    ? ((long)loteItem.TotalFisico).ToString() 
+                    : loteItem.TotalFisico.ToString(CultureInfo.InvariantCulture);
+
+                sb.AppendLine($"\"{kvp.Key}\";\"UNIDAD\";\"{existenciaStr}\";\"1\";\"{loteLimpio}\";\"{fechaVenc}\"");
+            }
+        }
+    }
+
+    var bom = Encoding.UTF8.GetPreamble();
+    var bytes = bom.Concat(Encoding.UTF8.GetBytes(sb.ToString())).ToArray();
+    var tipoAlcance = solo ? "SoloContados" : "Completo";
+    var fileName = $"ExistenciaAlmacen_Inventario_{tipoAlcance}_{DateTime.Now:yyyy-MM-dd}.csv";
+
+    return Results.File(bytes, "text/csv; charset=utf-8", fileName);
+});
+
 // Productos pendientes de contar (no aparecen en Conteos)
 app.MapGet("/api/inventario/pendientes-contar", async (InventarioDbContext db) =>
 {
@@ -447,4 +530,67 @@ public static class CatalogoState
 {
     public static string Version { get; set; } = DateTime.UtcNow.Ticks.ToString();
     public static void NotifyCatalogChanged() => Version = DateTime.UtcNow.Ticks.ToString();
+}
+
+public static class FormatoInventarioHelper
+{
+    public static (string LoteLimpio, string FechaVencimiento) ProcesarLoteYFecha(string? loteRaw, string? vencRaw, string formatoFecha = "YYYY-MM-DD")
+    {
+        string lote = (loteRaw ?? string.Empty).Trim();
+        string venc = (vencRaw ?? string.Empty).Trim();
+
+        // Si el lote contiene algo como "LOTE / VENC: 2026-03" o "LOTE VENC: 2026-03"
+        if (string.IsNullOrWhiteSpace(venc) && !string.IsNullOrWhiteSpace(lote))
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(lote, @"(?i)(.*?)(?:\s*(?:/|\s)\s*VENC:?\s*(\d{4}[-/]\d{1,2}(?:[-/]\d{1,2})?|\d{1,2}[-/]\d{1,2}[-/]\d{2,4}))");
+            if (match.Success)
+            {
+                lote = match.Groups[1].Value.Trim(' ', '/', '-');
+                venc = match.Groups[2].Value.Trim();
+            }
+            else if (lote.ToUpper().StartsWith("VENC:"))
+            {
+                venc = lote.Substring(5).Trim();
+                lote = string.Empty;
+            }
+        }
+
+        string fechaFormateada = string.Empty;
+        if (!string.IsNullOrWhiteSpace(venc))
+        {
+            fechaFormateada = FormatearFecha(venc, formatoFecha);
+        }
+
+        return (lote, fechaFormateada);
+    }
+
+    public static string FormatearFecha(string fechaInput, string formato = "YYYY-MM-DD")
+    {
+        if (string.IsNullOrWhiteSpace(fechaInput)) return string.Empty;
+        fechaInput = fechaInput.Trim();
+
+        DateTime dt;
+        // Si viene en formato mes HTML5: YYYY-MM
+        if (DateTime.TryParseExact(fechaInput, new[] { "yyyy-MM", "yyyy/MM" }, CultureInfo.InvariantCulture, DateTimeStyles.None, out var ym))
+        {
+            int lastDay = DateTime.DaysInMonth(ym.Year, ym.Month);
+            dt = new DateTime(ym.Year, ym.Month, lastDay);
+        }
+        else if (DateTime.TryParseExact(fechaInput, new[] { "yyyy-MM-dd", "yyyy/MM/dd", "dd-MM-yyyy", "dd/MM/yyyy" }, CultureInfo.InvariantCulture, DateTimeStyles.None, out var exactDate))
+        {
+            dt = exactDate;
+        }
+        else if (DateTime.TryParse(fechaInput, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed))
+        {
+            dt = parsed;
+        }
+        else
+        {
+            return fechaInput;
+        }
+
+        return formato.ToUpper() == "DD/MM/YYYY" 
+            ? dt.ToString("dd/MM/yyyy") 
+            : dt.ToString("yyyy-MM-dd");
+    }
 }
